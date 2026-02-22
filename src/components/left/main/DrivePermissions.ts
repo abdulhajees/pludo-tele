@@ -34,7 +34,8 @@ export const initDrivePermissions = async () => {
 
 export const syncSpacePermissions = async (chat: ApiChat) => {
     // If user is creator or has ANY admin rights, they are considered an Admin of the space.
-    const isAdmin = Boolean(chat.isCreator || chat.adminRights);
+    const isValidAdmin = chat.adminRights ? Object.values(chat.adminRights).some(Boolean) : false;
+    const isAdmin = Boolean(chat.isCreator || isValidAdmin);
 
     // Only update IDB if it has changed to avoid unnecessary writes
     if (!permissionsCache[chat.id] || permissionsCache[chat.id].isAdmin !== isAdmin) {

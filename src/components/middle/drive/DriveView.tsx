@@ -8,7 +8,6 @@ import { getDocumentExtension } from '../../common/helpers/documentInfo';
 import { openSystemFilesDialog } from '../../../util/systemFilesDialog';
 
 import DriveHeader from './DriveHeader';
-import QuickAccess from './QuickAccess';
 import AssetTable from './AssetTable';
 import DriveFilePreview from './DriveFilePreview';
 import DriveNotifications from './DriveNotifications';
@@ -253,8 +252,6 @@ const DriveView: FC<OwnProps & StateProps> = ({
                             ))}
                         </div>
 
-                        {(driveActiveSection === 'my_files' || (!driveActiveSection && section === 'my-files')) && <QuickAccess files={allFiles} />}
-
                         <AssetTable
                             files={files}
                             chatId={chatId || ''}
@@ -271,6 +268,7 @@ const DriveView: FC<OwnProps & StateProps> = ({
                         threadId={threadId}
                         onClose={() => setSelectedFile(undefined)}
                         isAdmin={isAdmin}
+                        currentUserId={currentUserId}
                     />
                 )}
             </div>

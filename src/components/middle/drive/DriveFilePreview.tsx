@@ -9,12 +9,18 @@ import useOldLang from '../../../hooks/useOldLang';
 
 import './DriveFilePreview.scss';
 
+const TELEGRAM_VIEWABLE = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov'];
+const NO_PREVIEW_EXTS = ['zip', 'rar', '7z', 'tar', 'gz', 'exe', 'dmg', 'pkg', 'deb', 'apk', 'iso', 'bin'];
+
+type PreviewMode = 'telegram' | 'browser' | 'none';
+
 type OwnProps = {
     file: ApiMessage;
     chatId: string;
     threadId?: number | string;
     onClose: () => void;
     isAdmin?: boolean;
+    currentUserId?: string;
 };
 
 const formatSize = (bytes: number) => {
@@ -25,27 +31,44 @@ const formatSize = (bytes: number) => {
     return (bytes / 1073741824).toFixed(1) + ' GB';
 };
 
-const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdmin = true }) => {
+const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdmin = false, currentUserId }) => {
     const oldLang = useOldLang();
 
     const { document, photo, video } = getMessageContent(file);
     const customFileName = file.content.text?.text?.trim();
-    const rawFileName = document?.fileName || (photo ? 'image' : video ? 'video' : 'Untitled');
+    const rawFileName = document?.fileName || (photo ? 'Photo' : video ? 'Video' : 'Untitled');
     const fileName = customFileName || rawFileName;
     const size = document?.size || (video && 'size' in video ? (video as any).size : 0) || 0;
-    const ext = document?.fileName?.split('.').pop()?.toLowerCase() || (photo ? 'image' : '');
+    const ext = document?.fileName?.split('.').pop()?.toLowerCase() || '';
 
-    const hasPreviewableContent = Boolean(document || photo || video);
+    const previewMode: PreviewMode = (() => {
+        if (photo) return 'telegram';
+        if (video || TELEGRAM_VIEWABLE.includes(ext)) return 'telegram';
+        if (NO_PREVIEW_EXTS.includes(ext)) return 'none';
+        if (document) return 'browser';
+        return 'none';
+    })();
+
     const fileColor = (() => {
         if (photo || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return '#10b981';
         if (ext === 'pdf') return '#ef4444';
         if (['doc', 'docx'].includes(ext)) return '#3b82f6';
         if (['ppt', 'pptx'].includes(ext)) return '#f97316';
-        if (['mp4', 'mov'].includes(ext)) return '#8B5CF6';
+        if (['mp4', 'mov', 'webm'].includes(ext)) return '#8B5CF6';
+        if (['mp3', 'wav', 'ogg'].includes(ext)) return '#ec4899';
+        if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return '#f59e0b';
         return '#6b7280';
     })();
 
-    const openViewer = () => {
+    const getFileIconClass = () => {
+        if (photo) return 'icon-photo';
+        if (['mp4', 'mov', 'webm', 'avi'].includes(ext)) return 'icon-video';
+        if (['mp3', 'wav', 'ogg'].includes(ext)) return 'icon-audio';
+        if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'icon-archive';
+        return 'icon-document';
+    };
+
+    const handleTelegramPreview = () => {
         getActions().openMediaViewer({
             chatId,
             threadId: threadId as number,
@@ -55,8 +78,16 @@ const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdm
     };
 
     const handleDownload = () => {
-        if (!document) return;
-        getActions().downloadMedia({ media: document, originMessage: file });
+        if (document) {
+            getActions().downloadMedia({ media: document, originMessage: file });
+        } else if (photo || video) {
+            getActions().openMediaViewer({
+                chatId,
+                threadId: threadId as number,
+                messageId: file.id,
+                origin: MediaViewerOrigin.Inline,
+            });
+        }
     };
 
     const handleDelete = () => {
@@ -78,6 +109,16 @@ const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdm
         setIsEditingTag(false);
     };
 
+    const canManage = Boolean(isAdmin || (currentUserId && file.senderId === currentUserId));
+
+    const previewLabel = previewMode === 'telegram'
+        ? (photo ? 'View Image' : 'View Video')
+        : previewMode === 'browser'
+            ? 'Open in Browser'
+            : null;
+
+    const previewIcon = previewMode === 'telegram' ? 'icon-eye-1' : 'icon-web';
+
     return (
         <div className="DriveFilePreview">
             <div className="DriveFilePreview-header">
@@ -93,7 +134,7 @@ const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdm
                     style={{ backgroundColor: `${fileColor}15` } as React.CSSProperties}
                 >
                     <i
-                        className="icon icon-document preview-icon"
+                        className={`icon ${getFileIconClass()} preview-icon`}
                         style={{ color: fileColor } as React.CSSProperties}
                     />
                     {ext && <span className="file-ext">{ext.toUpperCase()}</span>}
@@ -121,14 +162,14 @@ const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdm
                     ) : (
                         <div className="tag-display-container">
                             <span>{fileName}</span>
-                            {isAdmin && (
+                            {canManage && (
                                 <button
                                     className="tag-edit-icon"
                                     onClick={() => {
                                         setTagValue(customFileName || '');
                                         setIsEditingTag(true);
                                     }}
-                                    title={customFileName ? "Edit tag" : "Add tag"}
+                                    title={customFileName ? 'Edit tag' : 'Add tag'}
                                 >
                                     <i className={`icon ${customFileName ? 'icon-edit' : 'icon-add'}`} />
                                 </button>
@@ -148,30 +189,32 @@ const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdm
                     </div>
                     <div className="meta-row">
                         <span className="meta-label">Type</span>
-                        <span className="meta-value">{ext ? ext.toUpperCase() : 'N/A'}</span>
+                        <span className="meta-value">{ext ? ext.toUpperCase() : (photo ? 'IMAGE' : 'N/A')}</span>
+                    </div>
+                    <div className="meta-row">
+                        <span className="meta-label">Preview</span>
+                        <span className={`meta-value preview-status preview-status--${previewMode}`}>
+                            {previewMode === 'telegram' && '✓ Inline viewer'}
+                            {previewMode === 'browser' && '✓ Browser tab'}
+                            {previewMode === 'none' && '✗ Not supported'}
+                        </span>
                     </div>
                 </div>
-
-                {!hasPreviewableContent && (
-                    <div className="no-content-notice">
-                        <i className="icon icon-warning" />
-                        <span>This message has no file attached — it may be a text-only entry.</span>
-                    </div>
-                )}
             </div>
 
             <div className="DriveFilePreview-actions">
-                {hasPreviewableContent && (
-                    <button className="preview-action-btn primary" onClick={openViewer}>
-                        <i className="icon icon-eye-1" /> Preview
+                {previewMode !== 'none' && previewLabel && (
+                    <button
+                        className="preview-action-btn primary"
+                        onClick={previewMode === 'telegram' ? handleTelegramPreview : handleDownload}
+                    >
+                        <i className={`icon ${previewIcon}`} /> {previewLabel}
                     </button>
                 )}
-                {hasPreviewableContent && (
-                    <button className="preview-action-btn secondary" onClick={handleDownload}>
-                        <i className="icon icon-download" /> Download
-                    </button>
-                )}
-                {isAdmin && (
+                <button className="preview-action-btn secondary" onClick={handleDownload}>
+                    <i className="icon icon-download" /> Download
+                </button>
+                {canManage && (
                     <button className="preview-action-btn danger" onClick={handleDelete}>
                         <i className="icon icon-delete" /> Delete
                     </button>

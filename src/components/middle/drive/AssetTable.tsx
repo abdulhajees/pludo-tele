@@ -1,16 +1,20 @@
 import type { FC } from '@teact';
 import { memo, useState } from '@teact';
 import { getActions, withGlobal } from '../../../global';
-import { selectUser } from '../../../global/selectors';
-import type { ApiMessage } from '../../../api/types';
+import { selectUser, selectChat } from '../../../global/selectors';
+import type { ApiChat, ApiMessage, ApiUser } from '../../../api/types';
 import { getMessageContent } from '../../../global/helpers';
 import { formatMediaDateTime } from '../../../util/dates/dateFormat';
-import { MediaViewerOrigin } from '../../../types';
 import useOldLang from '../../../hooks/useOldLang';
+import ProfilePhoto from '../../common/profile/ProfilePhoto';
 
 import DriveShareFileModal from './DriveShareFileModal';
 
 import './AssetTable.scss';
+
+const BROWSER_VIEWABLE_EXTS = ['pdf', 'txt', 'svg', 'mp3', 'wav', 'ogg', 'webm'];
+const TELEGRAM_VIEWER_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov'];
+const NO_PREVIEW_EXTS = ['zip', 'rar', '7z', 'tar', 'gz', 'exe', 'dmg', 'pkg', 'deb', 'apk', 'iso'];
 
 type OwnProps = {
     files: ApiMessage[];
@@ -18,13 +22,24 @@ type OwnProps = {
     threadId?: number | string;
     onFileSelect?: (file: ApiMessage) => void;
     isAdmin?: boolean;
+    chatsById?: Record<string, ApiChat>;
+    currentUserId?: string;
 };
 
 const formatSize = (bytes: number) => {
+    if (!bytes) return '—';
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
     if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
     return (bytes / 1073741824).toFixed(1) + ' GB';
+};
+
+const getPreviewMode = (ext: string, isPhoto: boolean, isVideo: boolean): 'telegram' | 'browser' | 'none' => {
+    if (isPhoto) return 'telegram';
+    if (TELEGRAM_VIEWER_EXTS.includes(ext)) return 'telegram';
+    if (BROWSER_VIEWABLE_EXTS.includes(ext)) return 'browser';
+    if (NO_PREVIEW_EXTS.includes(ext)) return 'none';
+    return 'browser';
 };
 
 const AssetTableRow: FC<{
@@ -33,7 +48,9 @@ const AssetTableRow: FC<{
     threadId?: number | string;
     onFileSelect?: (file: ApiMessage) => void;
     isAdmin?: boolean;
-}> = memo(({ file, chatId, threadId, onFileSelect, isAdmin = true }) => {
+    chatsById?: Record<string, ApiChat>;
+    currentUserId?: string;
+}> = memo(({ file, chatId, threadId, onFileSelect, isAdmin = false, chatsById, currentUserId }) => {
     const oldLang = useOldLang();
     const [menuOpen, setMenuOpen] = useState(false);
     const [renaming, setRenaming] = useState(false);
@@ -42,47 +59,72 @@ const AssetTableRow: FC<{
 
     const { document, photo, video } = getMessageContent(file);
     const customFileName = file.content.text?.text?.trim();
-    const rawFileName = document?.fileName || 'file';
+    const rawFileName = document?.fileName || (photo ? 'Photo' : video ? 'Video' : 'file');
     const fileName = customFileName || rawFileName;
     const size = document?.size || (video && 'size' in video ? (video as any).size : 0) || 0;
     const ext = document?.fileName?.split('.').pop()?.toLowerCase() || '';
 
     const isPending = file.sendingState === 'messageSendingStatePending';
     const isFailed = file.sendingState === 'messageSendingStateFailed';
+    const previewMode = getPreviewMode(ext, Boolean(photo), Boolean(video));
+    const canManage = Boolean(isAdmin || (currentUserId && file.senderId === currentUserId));
+
+    const sourceChat = (file as any).chatId && chatsById
+        ? chatsById[(file as any).chatId]
+        : undefined;
+
+    const locationLabel = sourceChat?.title
+        ? sourceChat.title.replace(/^pludo-drive_/i, '').replace(/^pludo-drive/i, 'Drive')
+        : 'My Drive';
+
+    const isSharedWithMe = file.senderId && file.senderId !== currentUserId;
 
     const getFileIcon = () => {
         if (photo) return 'icon-photo';
-        if (['pdf'].includes(ext)) return 'icon-document';
+        if (ext === 'pdf') return 'icon-document';
         if (['doc', 'docx'].includes(ext)) return 'icon-document';
         if (['ppt', 'pptx'].includes(ext)) return 'icon-document';
-        if (['mp4', 'mov', 'avi'].includes(ext)) return 'icon-video';
-        if (['mp3', 'wav'].includes(ext)) return 'icon-audio';
+        if (['mp4', 'mov', 'avi', 'webm'].includes(ext)) return 'icon-video';
+        if (['mp3', 'wav', 'ogg'].includes(ext)) return 'icon-audio';
+        if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'icon-archive';
         return 'icon-document';
     };
 
     const getIconColor = () => {
         if (photo || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return '#10b981';
-        if (['pdf'].includes(ext)) return '#ef4444';
+        if (ext === 'pdf') return '#ef4444';
         if (['doc', 'docx'].includes(ext)) return '#3b82f6';
         if (['ppt', 'pptx'].includes(ext)) return '#f97316';
-        if (['mp4', 'mov'].includes(ext)) return '#8b5cf6';
+        if (['mp4', 'mov', 'webm'].includes(ext)) return '#8b5cf6';
+        if (['mp3', 'wav'].includes(ext)) return '#ec4899';
+        if (['zip', 'rar', '7z'].includes(ext)) return '#f59e0b';
         return '#6b7280';
+    };
+
+    const handlePreview = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setMenuOpen(false);
+        if (previewMode === 'telegram') {
+            getActions().openMediaViewer({
+                chatId,
+                threadId: threadId as number,
+                messageId: file.id,
+                origin: 'inline' as any,
+            });
+        } else if (previewMode === 'browser' && document) {
+            getActions().downloadMedia({ media: document, originMessage: file });
+        }
     };
 
     const handleRowClick = (e: React.MouseEvent) => {
         if (menuOpen || renaming) return;
         if (isPending) return;
+        if (previewMode === 'none') return;
         if (onFileSelect) {
             onFileSelect(file);
             return;
         }
-        const { openMediaViewer } = getActions();
-        openMediaViewer({
-            chatId,
-            threadId: threadId as number,
-            messageId: file.id,
-            origin: MediaViewerOrigin.Inline,
-        });
+        handlePreview(e);
     };
 
     const handleDownload = (e: React.MouseEvent) => {
@@ -95,7 +137,7 @@ const AssetTableRow: FC<{
                 chatId,
                 threadId: threadId as number,
                 messageId: file.id,
-                origin: MediaViewerOrigin.Inline,
+                origin: 'inline' as any,
             });
         }
     };
@@ -115,7 +157,9 @@ const AssetTableRow: FC<{
 
     const handleRenameConfirm = () => {
         if (renameValue.trim() && renameValue.trim() !== fileName) {
+            getActions().setEditingId({ messageId: file.id });
             getActions().editMessage({
+                messageList: { chatId, threadId: threadId as number, type: 'thread' },
                 text: renameValue.trim(),
             });
         }
@@ -129,7 +173,7 @@ const AssetTableRow: FC<{
 
     return (
         <div
-            className={`AssetTableRow ${isPending ? 'pending' : ''} ${isFailed ? 'failed' : ''}`}
+            className={`AssetTableRow ${isPending ? 'pending' : ''} ${isFailed ? 'failed' : ''} ${previewMode === 'none' ? 'no-preview' : 'can-preview'}`}
             onClick={handleRowClick}
         >
             <div className="AssetTable-col name-col">
@@ -147,18 +191,34 @@ const AssetTableRow: FC<{
                         onClick={(e) => e.stopPropagation()}
                     />
                 ) : (
-                    <span className="file-name">{fileName}</span>
+                    <div className="file-name-block">
+                        <span className="file-name">{fileName}</span>
+                        {isPending && <span className="file-badge uploading">Uploading</span>}
+                        {isFailed && <span className="file-badge failed">Failed</span>}
+                        {previewMode === 'none' && !isPending && <span className="file-badge no-preview">No Preview</span>}
+                    </div>
                 )}
             </div>
+
             <div className="AssetTable-col size-col">
-                {isPending ? 'Uploading...' : isFailed ? 'Failed' : formatSize(size)}
+                {formatSize(size)}
             </div>
-            <div className="AssetTable-col createdBy-col">
-                <SenderName userId={file.senderId} chatId={chatId} />
+
+            <div className="AssetTable-col sharedBy-col">
+                <SenderInfo userId={file.senderId} currentUserId={currentUserId} />
             </div>
+
+            <div className="AssetTable-col location-col">
+                <div className="location-badge">
+                    <i className={`icon ${isSharedWithMe ? 'icon-user' : 'icon-folder'}`} />
+                    <span>{isSharedWithMe ? 'Shared with me' : locationLabel}</span>
+                </div>
+            </div>
+
             <div className="AssetTable-col created-col">
                 {isPending ? 'Just now' : formatMediaDateTime(oldLang, file.date * 1000)}
             </div>
+
             <div className="AssetTable-col actions-col" onClick={(e) => e.stopPropagation()}>
                 <button
                     className="row-action-btn"
@@ -169,13 +229,23 @@ const AssetTableRow: FC<{
                 </button>
                 {menuOpen && (
                     <div className="row-action-menu">
+                        {previewMode === 'telegram' && (
+                            <button className="menu-item" onClick={handlePreview}>
+                                <i className="icon icon-eye-open" /> Preview
+                            </button>
+                        )}
+                        {previewMode === 'browser' && (
+                            <button className="menu-item" onClick={handlePreview}>
+                                <i className="icon icon-web" /> Open in Browser
+                            </button>
+                        )}
                         <button className="menu-item" onClick={handleDownload}>
                             <i className="icon icon-download" /> Download
                         </button>
                         <button className="menu-item" onClick={(e) => { e.stopPropagation(); setMenuOpen(false); setShareModalOpen(true); }}>
                             <i className="icon icon-share" /> Share
                         </button>
-                        {isAdmin && (
+                        {canManage && (
                             <>
                                 <button className="menu-item" onClick={handleRenameStart}>
                                     <i className="icon icon-edit" /> Rename
@@ -199,25 +269,41 @@ const AssetTableRow: FC<{
     );
 });
 
-const SenderName = memo(withGlobal<{ userId?: string; chatId: string }>(
-    (global, { userId, chatId }) => {
-        const isSelf = userId === global.currentUserId || userId === chatId || !userId;
-        const user = userId ? selectUser(global, userId) : undefined;
+const SenderInfo = memo(withGlobal<{ userId?: string; currentUserId?: string }>(
+    (global, { userId, currentUserId }) => {
+        const isSelf = !userId || userId === currentUserId || userId === global.currentUserId;
+        const user = userId && !isSelf ? selectUser(global, userId) : undefined;
         let name = 'Unknown';
         if (isSelf) {
             name = 'Me';
         } else if (user) {
-            name = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+            name = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.usernames?.[0]?.username || 'User';
         }
-        return { name };
+        return { user, isSelf, name };
     }
-)(({ name }: { name: string }) => <span>{name}</span>));
+)(({ user, isSelf, name }: { user?: ApiUser; isSelf?: boolean; name: string }) => (
+    <div className="AssetTable-sender">
+        {(user && !isSelf) ? (
+            <ProfilePhoto
+                user={user}
+                theme="light"
+                canPlayVideo={false}
+                onClick={() => { }}
+            />
+        ) : (
+            <div className="placeholder-avatar">
+                {name.charAt(0).toUpperCase()}
+            </div>
+        )}
+        <span>{name}</span>
+    </div>
+)));
 
-const AssetTable: FC<OwnProps> = ({ files, chatId, threadId, onFileSelect, isAdmin = true }) => {
+const AssetTable: FC<OwnProps> = ({ files, chatId, threadId, onFileSelect, isAdmin = false, chatsById, currentUserId }) => {
     return (
         <div className="AssetTable">
             <div className="AssetTable-header-row">
-                <h2 className="section-title">Assets</h2>
+                <h2 className="section-title">Files</h2>
                 <span className="asset-count">{files.length} item{files.length !== 1 ? 's' : ''}</span>
             </div>
 
@@ -225,8 +311,9 @@ const AssetTable: FC<OwnProps> = ({ files, chatId, threadId, onFileSelect, isAdm
                 <div className="AssetTable-header">
                     <div className="AssetTable-col name-col">Name</div>
                     <div className="AssetTable-col size-col">Size</div>
-                    <div className="AssetTable-col createdBy-col">Created by</div>
-                    <div className="AssetTable-col created-col">Created</div>
+                    <div className="AssetTable-col sharedBy-col">Shared by</div>
+                    <div className="AssetTable-col location-col">Location</div>
+                    <div className="AssetTable-col created-col">Date</div>
                     <div className="AssetTable-col actions-col" />
                 </div>
 
@@ -239,12 +326,14 @@ const AssetTable: FC<OwnProps> = ({ files, chatId, threadId, onFileSelect, isAdm
                             threadId={threadId}
                             onFileSelect={onFileSelect}
                             isAdmin={isAdmin}
+                            chatsById={chatsById}
+                            currentUserId={currentUserId}
                         />
                     ))}
                     {files.length === 0 && (
                         <div className="AssetTable-empty">
                             <i className="icon icon-document" />
-                            <p>No assets yet. Upload your first file.</p>
+                            <p>No files yet. Upload your first file.</p>
                         </div>
                     )}
                 </div>
@@ -253,4 +342,9 @@ const AssetTable: FC<OwnProps> = ({ files, chatId, threadId, onFileSelect, isAdm
     );
 };
 
-export default memo(AssetTable);
+export default memo(withGlobal<OwnProps>(
+    (global) => ({
+        chatsById: global.chats.byId as Record<string, ApiChat>,
+        currentUserId: global.currentUserId,
+    })
+)(AssetTable));

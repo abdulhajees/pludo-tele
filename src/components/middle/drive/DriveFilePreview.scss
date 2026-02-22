@@ -202,6 +202,18 @@
                     font-size: 0.8rem;
                     color: #374151;
                     font-weight: 600;
+
+                    &.preview-status--telegram {
+                        color: #10b981;
+                    }
+
+                    &.preview-status--browser {
+                        color: #3b82f6;
+                    }
+
+                    &.preview-status--none {
+                        color: #9ca3af;
+                    }
                 }
             }
         }
