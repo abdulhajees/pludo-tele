@@ -97,6 +97,83 @@
   .hidden-composer {
     display: none !important;
   }
+
+  .DriveView-spaceSearchModal {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    background: rgba(15, 23, 42, 0.25);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 5rem;
+  }
+
+  .DriveView-spaceSearchDialog {
+    width: min(32rem, calc(100% - 2rem));
+    max-height: min(26rem, calc(100% - 6rem));
+    background: #fff;
+    border-radius: 1rem;
+    border: 1px solid rgba(139, 92, 246, 0.12);
+    box-shadow: 0 1rem 2rem rgba(15, 23, 42, 0.2);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .DriveView-spaceSearchHeader {
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid #f0effe;
+
+    h3 {
+      margin: 0;
+      font-size: 1rem;
+      color: #1e1b4b;
+      font-weight: 700;
+    }
+  }
+
+  .DriveView-spaceSearchBody {
+    overflow-y: auto;
+    padding: 0.5rem;
+  }
+
+  .DriveView-spaceSearchItem {
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-radius: 0.75rem;
+    padding: 0.625rem 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    cursor: pointer;
+    color: #374151;
+    text-align: left;
+
+    &:hover {
+      background: #faf9ff;
+      color: #7c3aed;
+    }
+
+    .icon {
+      color: #8b5cf6;
+      font-size: 0.95rem;
+    }
+
+    span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .DriveView-spaceSearchEmpty {
+    padding: 1rem;
+    text-align: center;
+    color: #6b7280;
+    font-size: 0.875rem;
+  }
 }
 
 #LeftColumn.drive-sidebar-collapsed {

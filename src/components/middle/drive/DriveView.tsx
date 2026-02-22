@@ -3,13 +3,14 @@ import { memo, useMemo, useState, useEffect } from '@teact';
 import { getActions, withGlobal } from '../../../global';
 import { selectChatMessages, selectTabState } from '../../../global/selectors';
 import { MAIN_THREAD_ID } from '../../../api/types';
-import type { ApiChat, ApiMessage } from '../../../api/types';
+import type { ApiChat, ApiChatFullInfo, ApiMessage } from '../../../api/types';
 import type { ActiveDownloads } from '../../../types';
 import { getMessageContent } from '../../../global/helpers';
 import { getDocumentExtension } from '../../common/helpers/documentInfo';
 import { openSystemFilesDialog } from '../../../util/systemFilesDialog';
-import { parseDriveFavoriteMessage } from '../../../util/driveFavorites';
-import { isDriveFolderTitle, isDriveShareTitle, normalizeDriveSectionUi } from '../../../util/drive';
+import type { DriveFavoriteStoredItem } from '../../../util/driveFavoritesStore';
+import { getDriveFavoriteItems, removeDriveFavoriteItem, upsertDriveFavoriteItem } from '../../../util/driveFavoritesStore';
+import { getDriveUiName, isDriveFolderTitle, isDriveShareTitle, normalizeDriveSectionUi } from '../../../util/drive';
 import type { DriveSection, DriveSectionUi } from '../../../util/drive';
 
 import useLang from '../../../hooks/useLang';
@@ -33,10 +34,11 @@ type OwnProps = {
 
 type StateProps = {
     messagesByChatId?: Record<string, Record<number, ApiMessage> | undefined>;
-    savedMessagesById?: Record<number, ApiMessage>;
+    savedMessagesMessages?: Record<number, ApiMessage>;
     inviteLink?: string;
     driveFoldersIds?: string[];
     driveFoldersById?: Record<string, ApiChat>;
+    chatFullInfoById?: Record<string, ApiChatFullInfo>;
     isCurrentChatAdmin?: boolean;
     activeDownloads?: ActiveDownloads;
 };
@@ -44,10 +46,16 @@ type StateProps = {
 type FilterType = 'all' | 'doc' | 'image' | 'pdf' | 'video' | 'audio' | 'archive' | 'sheet' | 'code';
 type TimeFilterType = 'all' | '24h' | '7d' | '30d';
 
+type DriveSpaceItem = {
+    id: string;
+    title: string;
+};
+
 type DriveFileItem = {
     id: string;
     sourceChatId: string;
     file: ApiMessage;
+    sourceTitle?: string;
 };
 
 const DriveView: FC<OwnProps & StateProps> = ({
@@ -55,13 +63,14 @@ const DriveView: FC<OwnProps & StateProps> = ({
     threadId,
     isMobile,
     messagesByChatId,
-    savedMessagesById,
+    savedMessagesMessages,
     inviteLink,
     section = 'my-files',
     currentUserId,
     driveActiveSection,
     driveFoldersIds,
     driveFoldersById,
+    chatFullInfoById,
     isCurrentChatAdmin,
     activeDownloads,
 }) => {
@@ -74,6 +83,7 @@ const DriveView: FC<OwnProps & StateProps> = ({
     const [activeTimeFilter, setActiveTimeFilter] = useState<TimeFilterType>('all');
     const [shouldSearchSpaces, setShouldSearchSpaces] = useState(false);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
+    const [favoriteItemsByKey, setFavoriteItemsByKey] = useState<Record<string, DriveFavoriteStoredItem>>({});
 
     const isAdmin = Boolean(isCurrentChatAdmin);
 
@@ -89,6 +99,21 @@ const DriveView: FC<OwnProps & StateProps> = ({
     useEffect(() => {
         setSelectedFile(undefined);
     }, [chatId, driveActiveSection]);
+
+    useEffect(() => {
+        if (!currentUserId) {
+            setFavoriteItemsByKey({});
+            return;
+        }
+
+        // Load IDB cache for fast initial display
+        void getDriveFavoriteItems(currentUserId).then((items) => {
+            setFavoriteItemsByKey(items);
+        });
+
+        // Ensure Saved Messages are loaded (source of truth)
+        getActions().loadViewportMessages({ chatId: currentUserId, threadId: MAIN_THREAD_ID });
+    }, [currentUserId]);
 
     const handleUploadClick = () => {
         openSystemFilesDialog('*', (e: Event) => {
@@ -150,6 +175,41 @@ const DriveView: FC<OwnProps & StateProps> = ({
         });
     };
 
+    // Back-fill savedMsgId into IDB whenever savedMessagesMessages is updated
+    useEffect(() => {
+        if (!currentUserId || !savedMessagesMessages) return;
+
+        Object.values(savedMessagesMessages).forEach((msg) => {
+            if (!msg?.forwardInfo?.fromChatId || !msg?.forwardInfo?.fromMessageId) return;
+            const { document, photo, video } = getMessageContent(msg);
+            if (!(document || photo || video)) return;
+
+            const key = `${msg.forwardInfo.fromChatId}:${msg.forwardInfo.fromMessageId}`;
+            const cached = favoriteItemsByKey[key];
+            if (cached && cached.savedMsgId === msg.id) return;
+
+            if (cached) {
+                // Update in-memory state
+                setFavoriteItemsByKey((prev) => {
+                    const entry = prev[key];
+                    if (!entry || entry.savedMsgId === msg.id) return prev;
+                    return { ...prev, [key]: { ...entry, savedMsgId: msg.id } };
+                });
+
+                // Persist savedMsgId to IDB
+                void upsertDriveFavoriteItem({
+                    sourceChatId: cached.sourceChatId,
+                    sourceTitle: cached.sourceTitle,
+                    messageId: cached.messageId,
+                    savedMsgId: msg.id,
+                    fileName: cached.fileName,
+                    file: cached.file,
+                }, currentUserId);
+            }
+        });
+    // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps
+    }, [savedMessagesMessages, currentUserId]);
+
     const allFiles = useMemo(() => {
         if (!messagesByChatId) return [];
 
@@ -185,17 +245,52 @@ const DriveView: FC<OwnProps & StateProps> = ({
         }
 
         if (targetSection === 'favorites') {
-            const favoriteMeta = Object.values(savedMessagesById || {})
-                .map((message) => parseDriveFavoriteMessage(message.content.text?.text))
-                .filter(Boolean) as ReturnType<typeof parseDriveFavoriteMessage>[];
+            const allFilesByKey: Record<string, DriveFileItem> = {};
 
-            const favoriteKeys = new Set(favoriteMeta.map((entry) => `${entry!.sourceChatId}:${entry!.messageId}`));
+            allFiles.forEach((item) => {
+                allFilesByKey[`${item.sourceChatId}:${item.file.id}`] = item;
+            });
 
-            return allFiles.filter(({ sourceChatId, file }) => favoriteKeys.has(`${sourceChatId}:${file.id}`));
+            const seenKeys = new Set<string>();
+            const favItems: DriveFileItem[] = [];
+
+            // IDB is the authoritative list — always render all persisted favorites
+            Object.values(favoriteItemsByKey).forEach((stored) => {
+                const key = `${stored.sourceChatId}:${stored.messageId}`;
+                if (seenKeys.has(key)) return;
+                seenKeys.add(key);
+
+                const liveItem = allFilesByKey[key];
+                // Use live message data if available (up-to-date metadata),
+                // otherwise fall back to the snapshot stored in IDB
+                favItems.push(liveItem || {
+                    id: `${stored.sourceChatId}_${stored.messageId}`,
+                    sourceChatId: stored.sourceChatId,
+                    file: stored.file,
+                    sourceTitle: stored.sourceTitle,
+                });
+            });
+
+            // Supplement with any cross-device additions found in Saved Messages
+            // viewport that haven't been synced to IDB yet
+            Object.values(savedMessagesMessages || {}).forEach((msg) => {
+                if (!msg?.forwardInfo?.fromChatId || !msg?.forwardInfo?.fromMessageId) return;
+                const { document, photo, video } = getMessageContent(msg);
+                if (!(document || photo || video)) return;
+
+                const key = `${msg.forwardInfo.fromChatId}:${msg.forwardInfo.fromMessageId}`;
+                if (seenKeys.has(key)) return;
+                seenKeys.add(key);
+
+                const liveItem = allFilesByKey[key];
+                if (liveItem) favItems.push(liveItem);
+            });
+
+            return favItems.sort((a, b) => b.file.date - a.file.date);
         }
 
         return allFiles;
-    }, [allFiles, section, driveActiveSection, currentUserId, savedMessagesById]);
+    }, [allFiles, section, driveActiveSection, currentUserId, favoriteItemsByKey, savedMessagesMessages]);
 
     const files = useMemo(() => {
         let result = sectionFiles;
@@ -227,7 +322,7 @@ const DriveView: FC<OwnProps & StateProps> = ({
             result = result.filter(({ file }) => (file.date * 1000) >= threshold);
         }
 
-        if (searchQuery.trim().length > 0) {
+        if (!shouldSearchSpaces && searchQuery.trim().length > 0) {
             const lowerQuery = searchQuery.toLowerCase();
             result = result.filter(({ file, sourceChatId }) => {
                 const { document } = getMessageContent(file);
@@ -236,10 +331,8 @@ const DriveView: FC<OwnProps & StateProps> = ({
                 const nameMatched = (customFileName || rawFileName).toLowerCase().includes(lowerQuery);
                 if (nameMatched) return true;
 
-                if (!shouldSearchSpaces) return false;
-
                 const folder = driveFoldersById?.[sourceChatId];
-                const folderName = folder?.title?.toLowerCase() || '';
+                const folderName = (getDriveUiName(folder?.title) || folder?.title || '').toLowerCase();
                 return folderName.includes(lowerQuery);
             });
         }
@@ -266,22 +359,140 @@ const DriveView: FC<OwnProps & StateProps> = ({
         { id: '30d', label: lang('DriveFilterTime30d') },
     ];
 
-    const favoriteMeta = useMemo(() => {
-        return Object.values(savedMessagesById || {})
-            .map((message) => parseDriveFavoriteMessage(message.content.text?.text))
-            .filter(Boolean) as ReturnType<typeof parseDriveFavoriteMessage>[];
-    }, [savedMessagesById]);
-
+    // Build favoriteKeys primarily from live Saved Messages (cross-device truth)
     const favoriteKeys = useMemo(() => {
         const map: Record<string, true> = {};
 
-        favoriteMeta.forEach((entry) => {
-            if (!entry) return;
+        // Primary: scan saved messages for forwarded file messages
+        Object.values(savedMessagesMessages || {}).forEach((msg) => {
+            if (!msg?.forwardInfo?.fromChatId || !msg?.forwardInfo?.fromMessageId) return;
+            const { document, photo, video } = getMessageContent(msg);
+            if (!(document || photo || video)) return;
+            map[`${msg.forwardInfo.fromChatId}:${msg.forwardInfo.fromMessageId}`] = true;
+        });
+
+        // Fallback: IDB cache items (shown before saved messages load)
+        Object.values(favoriteItemsByKey).forEach((entry) => {
             map[`${entry.sourceChatId}:${entry.messageId}`] = true;
         });
 
         return map;
-    }, [favoriteMeta]);
+    }, [savedMessagesMessages, favoriteItemsByKey]);
+
+    // Map favKey → saved messages message ID (needed to delete when un-favoriting)
+    // Checks IDB-stored savedMsgId first (covers older messages not in viewport),
+    // then live savedMessagesMessages viewport as a secondary source.
+    const savedMsgIdByFavKey = useMemo(() => {
+        const map: Record<string, number> = {};
+
+        // IDB-stored savedMsgId (persisted after the first viewport load)
+        Object.values(favoriteItemsByKey).forEach((entry) => {
+            if (entry.savedMsgId) {
+                map[`${entry.sourceChatId}:${entry.messageId}`] = entry.savedMsgId;
+            }
+        });
+
+        // Live viewport — overrides IDB if present (freshest data)
+        Object.values(savedMessagesMessages || {}).forEach((msg) => {
+            if (!msg?.forwardInfo?.fromChatId || !msg?.forwardInfo?.fromMessageId) return;
+            map[`${msg.forwardInfo.fromChatId}:${msg.forwardInfo.fromMessageId}`] = msg.id;
+        });
+
+        return map;
+    }, [savedMessagesMessages, favoriteItemsByKey]);
+
+    const handleAddFavorite = (params: {
+        sourceChatId: string;
+        sourceTitle?: string;
+        file: ApiMessage;
+        fileName?: string;
+    }) => {
+        if (!currentUserId) return;
+
+        const key = `${params.sourceChatId}:${params.file.id}`;
+        const nextItem: DriveFavoriteStoredItem = {
+            key,
+            sourceChatId: params.sourceChatId,
+            sourceTitle: params.sourceTitle,
+            messageId: params.file.id,
+            fileName: params.fileName,
+            file: params.file,
+            addedAt: Date.now(),
+        };
+
+        // Optimistic IDB cache update
+        setFavoriteItemsByKey((prev) => ({
+            ...prev,
+            [key]: prev[key] ? { ...nextItem, addedAt: prev[key].addedAt } : nextItem,
+        }));
+
+        void upsertDriveFavoriteItem({
+            sourceChatId: params.sourceChatId,
+            sourceTitle: params.sourceTitle,
+            messageId: params.file.id,
+            fileName: params.fileName,
+            file: params.file,
+        }, currentUserId);
+    };
+
+    const handleRemoveFavorite = (params: { sourceChatId: string; messageId: number }) => {
+        if (!currentUserId) return;
+
+        const key = `${params.sourceChatId}:${params.messageId}`;
+
+        // Delete the forwarded message from Saved Messages (Telegram source of truth)
+        const savedMsgId = savedMsgIdByFavKey[key];
+        if (savedMsgId) {
+            getActions().deleteMessages({
+                messageIds: [savedMsgId],
+                shouldDeleteForAll: false,
+                messageList: {
+                    chatId: currentUserId,
+                    threadId: MAIN_THREAD_ID,
+                    type: 'thread',
+                },
+            });
+        }
+
+        // Optimistic IDB cache removal
+        setFavoriteItemsByKey((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+        });
+
+        void removeDriveFavoriteItem(key, currentUserId);
+    };
+
+    const matchingSpaces = useMemo(() => {
+        if (!shouldSearchSpaces || !searchQuery.trim()) {
+            return [];
+        }
+
+        const lowerQuery = searchQuery.trim().toLowerCase();
+        const allChats = Object.values(driveFoldersById || {});
+
+        const spaces = allChats.filter((chat) => (
+            chat
+            && isDriveFolderTitle(chat.title)
+            && !chat.isNotJoined
+            && !chat.isRestricted
+        )) as ApiChat[];
+
+        return spaces
+            .map((space) => ({
+                id: space.id,
+                title: getDriveUiName(space.title) || space.title,
+            }))
+            .filter((space) => space.title.toLowerCase().includes(lowerQuery))
+            .slice(0, 20) as DriveSpaceItem[];
+    }, [shouldSearchSpaces, searchQuery, driveFoldersById]);
+
+    const handleOpenSpaceFromSearch = (spaceId: string) => {
+        getActions().setDriveActiveSection({ section: undefined });
+        getActions().openChat({ id: spaceId, shouldReplaceHistory: true });
+        setSearchQuery('');
+    };
 
     if (!chatId && !driveActiveSection) {
         return (
@@ -339,6 +550,8 @@ const DriveView: FC<OwnProps & StateProps> = ({
                 isSidebarCollapsed={isSidebarCollapsed}
                 searchQuery={searchQuery}
                 onSearchQueryChange={setSearchQuery}
+                isSearchSpacesEnabled={shouldSearchSpaces}
+                onToggleSearchSpaces={() => setShouldSearchSpaces((prev) => !prev)}
             />
             <div className="DriveView-body">
                 {driveActiveSection === 'notifications' ? (
@@ -388,7 +601,33 @@ const DriveView: FC<OwnProps & StateProps> = ({
                             isAdmin={isAdmin}
                             tableMode={driveSection === 'sharing' ? 'sharing' : 'space'}
                             favoriteKeys={favoriteKeys}
+                            onAddFavorite={handleAddFavorite}
+                            onRemoveFavorite={handleRemoveFavorite}
                         />
+                    </div>
+                )}
+
+                {shouldSearchSpaces && searchQuery.trim().length > 0 && (
+                    <div className="DriveView-spaceSearchModal" onClick={() => setSearchQuery('')}>
+                        <div className="DriveView-spaceSearchDialog" onClick={(e) => e.stopPropagation()}>
+                            <div className="DriveView-spaceSearchHeader">
+                                <h3>{lang('DriveSpaceSearchTitle')}</h3>
+                            </div>
+                            <div className="DriveView-spaceSearchBody custom-scroll">
+                                {matchingSpaces.length > 0 ? matchingSpaces.map((space) => (
+                                    <button
+                                        key={space.id}
+                                        className="DriveView-spaceSearchItem"
+                                        onClick={() => handleOpenSpaceFromSearch(space.id)}
+                                    >
+                                        <i className="icon icon-folder" />
+                                        <span>{space.title}</span>
+                                    </button>
+                                )) : (
+                                    <div className="DriveView-spaceSearchEmpty">{lang('DriveSpaceSearchEmpty')}</div>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 )}
                 {selectedFile && (
@@ -429,7 +668,6 @@ const DriveView: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
     (global, { chatId, driveActiveSection }): StateProps => {
         let messagesByChatId: Record<string, Record<number, ApiMessage> | undefined> | undefined;
-        let savedMessagesById: Record<number, ApiMessage> | undefined;
         let inviteLink: string | undefined;
         let driveFoldersIds: string[] | undefined;
         const fullInfoById = global.chats.fullInfoById || {};
@@ -465,15 +703,17 @@ export default memo(withGlobal<OwnProps>(
                 messagesByChatId![folder.id] = selectChatMessages(global, folder.id);
             });
             driveFoldersIds = sourceChats.map((f) => f.id);
-            savedMessagesById = global.currentUserId ? selectChatMessages(global, global.currentUserId) : undefined;
         }
 
         return {
             messagesByChatId,
-            savedMessagesById,
+            savedMessagesMessages: global.currentUserId
+                ? selectChatMessages(global, global.currentUserId)
+                : undefined,
             inviteLink,
             driveFoldersIds,
             driveFoldersById: global.chats.byId,
+            chatFullInfoById: global.chats.fullInfoById,
             isCurrentChatAdmin: chatId ? Boolean(global.chats.byId[chatId]?.isCreator || Object.values(global.chats.byId[chatId]?.adminRights || {}).some(Boolean)) : false,
             activeDownloads: selectTabState(global).activeDownloads,
         };

@@ -14,6 +14,8 @@ type OwnProps = {
     isSidebarCollapsed?: boolean;
     searchQuery: string;
     onSearchQueryChange: (query: string) => void;
+    isSearchSpacesEnabled: boolean;
+    onToggleSearchSpaces: () => void;
 };
 
 const DriveHeader: FC<OwnProps> = ({
@@ -25,6 +27,8 @@ const DriveHeader: FC<OwnProps> = ({
     isSidebarCollapsed,
     searchQuery,
     onSearchQueryChange,
+    isSearchSpacesEnabled,
+    onToggleSearchSpaces,
 }) => {
     const lang = useLang();
 
@@ -48,11 +52,18 @@ const DriveHeader: FC<OwnProps> = ({
                     <i className="icon icon-search" />
                     <input
                         type="text"
-                        placeholder={lang('DriveHeaderSearchPlaceholder')}
+                        placeholder={isSearchSpacesEnabled ? lang('DriveFilterSearchSpaces') : lang('DriveHeaderSearchPlaceholder')}
                         className="search-input"
                         value={searchQuery}
                         onChange={(e) => onSearchQueryChange(e.target.value)}
                     />
+                    <button
+                        className={`search-mode-toggle ${isSearchSpacesEnabled ? 'active' : ''}`}
+                        onClick={onToggleSearchSpaces}
+                        title={lang('DriveFilterSearchSpaces')}
+                    >
+                        <i className="icon icon-folder" />
+                    </button>
                 </div>
             </div>
             <div className="DriveHeader-actions">

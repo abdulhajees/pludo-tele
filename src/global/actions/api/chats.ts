@@ -3631,9 +3631,9 @@ addActionHandler('syncDriveChatFolders', async (global: any, actions: any): Prom
   const allChats = Object.values(global.chats.byId || {}) as any[];
   const fullInfoById = global.chats.fullInfoById || {};
 
-  const privateFilesIds: string[] = [];
-  const sharedFilesIds: string[] = [];
-  const connectionsIds: string[] = [];
+  const privateSpacesIds: string[] = [];
+  const sharedSpacesIds: string[] = [];
+  const p2pIds: string[] = [];
 
   allChats.forEach((chat: any) => {
     if (!chat || chat.isNotJoined || chat.isRestricted || !chat.title) return;
@@ -3647,13 +3647,15 @@ addActionHandler('syncDriveChatFolders', async (global: any, actions: any): Prom
       if (participants && currentUser) {
         const currentUsernames = ((currentUser.usernames as any[]) || []).map((item: any) => item.username?.toLowerCase()).filter(Boolean);
         if (currentUsernames.includes(participants.senderUsername) || currentUsernames.includes(participants.receiverUsername)) {
-          connectionsIds.push(chat.id);
+          p2pIds.push(chat.id);
         }
       }
-
-      sharedFilesIds.push(chat.id);
     } else if (isDriveFolderTitle(chat.title, chatAbout)) {
-      privateFilesIds.push(chat.id);
+      if ((chat.membersCount || 1) > 1) {
+        sharedSpacesIds.push(chat.id);
+      } else {
+        privateSpacesIds.push(chat.id);
+      }
     }
   });
 
@@ -3661,16 +3663,12 @@ addActionHandler('syncDriveChatFolders', async (global: any, actions: any): Prom
   const existingFolders = Object.values(byId) as any[];
 
   const targetFolders = [
-    { title: 'pludo_private_files', ids: privateFilesIds },
-    { title: 'pludo_shared_files', ids: sharedFilesIds },
-    { title: 'pludo_connections', ids: connectionsIds },
+    { title: 'Pludo-P2P', ids: p2pIds },
+    { title: 'Pludo-Private-spaces', ids: privateSpacesIds },
+    { title: 'Pludo-shared-spaces', ids: sharedSpacesIds },
   ];
 
-  let nextNewId = Math.max(...(orderedIds || []), 1) + 1;
-
   for (const target of targetFolders) {
-    if (target.ids.length === 0) continue; // Don't create empty folders 
-
     let folder = existingFolders.find((f: any) => f.title === target.title);
 
     if (folder) {
@@ -3695,7 +3693,6 @@ addActionHandler('syncDriveChatFolders', async (global: any, actions: any): Prom
           emoticon: '',
         } as any
       });
-      nextNewId++;
     }
   }
 });

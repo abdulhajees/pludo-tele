@@ -53,6 +53,8 @@ export interface LangPair {
   'DriveFilterTime7d': undefined;
   'DriveFilterTime30d': undefined;
   'DriveFilterSearchSpaces': undefined;
+  'DriveSpaceSearchTitle': undefined;
+  'DriveSpaceSearchEmpty': undefined;
   'DriveQuickAccessTitle': undefined;
   'DriveQuickAccessPresentations': undefined;
   'DriveTitleSpaceFolder': undefined;
@@ -99,6 +101,7 @@ export interface LangPair {
   'DriveMenuShare': undefined;
   'DriveMenuFavorite': undefined;
   'DriveMenuFavorited': undefined;
+  'DriveMenuUnfavorite': undefined;
   'ShowSidebar': undefined;
   'HideSidebar': undefined;
   'DriveCreateTitle': undefined;

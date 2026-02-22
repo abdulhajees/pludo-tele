@@ -273,6 +273,35 @@
                 flex: 0 0 40px;
                 justify-content: flex-end;
                 position: relative;
+
+                .row-favorite-btn {
+                    opacity: 0;
+                    background: none;
+                    border: none;
+                    cursor: pointer;
+                    color: #9ca3af;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 6px;
+                    transition: opacity 0.12s, background 0.12s, color 0.12s;
+
+                    &:hover {
+                        background: #fef2f2;
+                        color: #dc2626;
+                    }
+
+                    &.active {
+                        opacity: 1;
+                        color: #dc2626;
+                    }
+
+                    .icon {
+                        font-size: 1rem;
+                    }
+                }
             }
         }
 
@@ -300,6 +329,7 @@
                 &:hover {
                     background: #faf9ff;
 
+                    .row-favorite-btn,
                     .row-action-btn {
                         opacity: 1;
                     }

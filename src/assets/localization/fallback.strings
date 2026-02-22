@@ -50,6 +50,8 @@
 "DriveFilterTime7d" = "Last 7 days";
 "DriveFilterTime30d" = "Last 30 days";
 "DriveFilterSearchSpaces" = "Search spaces";
+"DriveSpaceSearchTitle" = "Search spaces";
+"DriveSpaceSearchEmpty" = "No spaces found";
 "DriveQuickAccessTitle" = "Quick Access";
 "DriveQuickAccessPresentations" = "Presentations";
 "DriveTitleSpaceFolder" = "Space Folder";
@@ -98,6 +100,7 @@
 "DriveMenuShare" = "Share";
 "DriveMenuFavorite" = "Favorite";
 "DriveMenuFavorited" = "Favorited";
+"DriveMenuUnfavorite" = "Remove from Favorites";
 "ShowSidebar" = "Show sidebar";
 "HideSidebar" = "Hide sidebar";
 "DriveCreateTitle" = "Create New Space";

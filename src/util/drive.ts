@@ -100,6 +100,16 @@ export function getDriveDisplayName(title?: string) {
   return title ? title.replace(/^pludo-drive_?/i, '').trim() : '';
 }
 
+export function getDriveUiName(title?: string) {
+  if (!title) return '';
+
+  return title
+    .replace(/^pludo-drive_/i, '')
+    .replace(/^pludo-drive/i, '')
+    .replace(/^pludo[_\s-]?drive[_\s-]?/i, '')
+    .trim();
+}
+
 export function buildDriveFolderTitle(name: string) {
   return `${DRIVE_PREFIX}${name}`;
 }
