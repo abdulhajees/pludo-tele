@@ -25,7 +25,7 @@ const NewChatButton: FC<OwnProps> = ({
   isShown,
   isAccountFrozen,
 }) => {
-  const { openFrozenAccountModal, createChannel } = getActions();
+  const { openFrozenAccountModal, createChannel, syncDriveChatFolders } = getActions();
 
   const lang = useOldLang();
 
@@ -47,8 +47,12 @@ const NewChatButton: FC<OwnProps> = ({
         memberIds: [],
         isChannel: true,
       });
+      syncDriveChatFolders();
+      setTimeout(() => {
+        syncDriveChatFolders();
+      }, 1500);
     }
-  }, [isAccountFrozen, openFrozenAccountModal, createChannel, lang]);
+  }, [isAccountFrozen, openFrozenAccountModal, createChannel, syncDriveChatFolders, lang]);
 
   return (
     <div className={fabClassName} dir={lang.isRtl ? 'rtl' : undefined}>

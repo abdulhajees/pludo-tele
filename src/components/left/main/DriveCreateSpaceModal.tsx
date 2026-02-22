@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import { memo, useState } from '../../../lib/teact/teact';
+import { memo, useEffect, useState } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 import { ChatCreationProgress } from '../../../types';
 import { selectTabState } from '../../../global/selectors';
@@ -27,11 +27,13 @@ const DriveCreateSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, onClose, cre
     const isLoading = creationProgress === ChatCreationProgress.InProgress;
     const isComplete = creationProgress === ChatCreationProgress.Complete;
 
-    if (isComplete && isOpen) {
+    useEffect(() => {
+        if (!isComplete || !isOpen) return;
         setSpaceName('');
         setError('');
+        getActions().syncDriveChatFolders();
         onClose();
-    }
+    }, [isComplete, isOpen, onClose]);
 
     if (!isOpen) return undefined;
 
@@ -81,7 +83,7 @@ const DriveCreateSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, onClose, cre
                             placeholder={lang('DriveCreatePlaceholder')}
                             value={spaceName}
                             onChange={(e) => {
-                                setSpaceName(e.target.value.replace(/\s+/g, '-'));
+                                setSpaceName(e.target.value);
                                 setError('');
                             }}
                             onKeyDown={handleKeyDown}

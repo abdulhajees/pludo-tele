@@ -102,6 +102,7 @@ export interface LangPair {
   'DriveMenuFavorite': undefined;
   'DriveMenuFavorited': undefined;
   'DriveMenuUnfavorite': undefined;
+  'DriveMenuUnfavoriteConfirm': undefined;
   'ShowSidebar': undefined;
   'HideSidebar': undefined;
   'DriveCreateTitle': undefined;

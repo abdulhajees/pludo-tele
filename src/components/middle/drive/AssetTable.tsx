@@ -1,6 +1,5 @@
 import type { FC } from '@teact';
 import { memo, useRef, useState } from '@teact';
-import { callApi } from '../../../api/gramjs';
 import { getActions, withGlobal } from '../../../global';
 import { selectTabState, selectUser } from '../../../global/selectors';
 import type { ApiChat, ApiChatFullInfo, ApiMessage, ApiUser } from '../../../api/types';
@@ -13,7 +12,7 @@ import type { ActiveDownloads } from '../../../types';
 import useOldLang from '../../../hooks/useOldLang';
 import useLang from '../../../hooks/useLang';
 import ProfilePhoto from '../../common/profile/ProfilePhoto';
-import { getDriveDisplayName, getDriveShareParticipants, getDriveUiName } from '../../../util/drive';
+import { getDriveDisplayName, getDriveShareParticipants } from '../../../util/drive';
 import { useClickOutside } from '../../../hooks/events/useOutsideClick';
 
 import DriveShareFileModal from './DriveShareFileModal';
@@ -43,17 +42,6 @@ type OwnProps = {
     chatFullInfoById?: Record<string, ApiChatFullInfo>;
     uploadProgressByMessageKey?: Record<string, { progress: number }>;
     activeDownloads?: ActiveDownloads;
-    favoriteKeys?: Record<string, true>;
-    onAddFavorite?: (params: {
-        sourceChatId: string;
-        sourceTitle?: string;
-        file: ApiMessage;
-        fileName?: string;
-    }) => void;
-    onRemoveFavorite?: (params: {
-        sourceChatId: string;
-        messageId: number;
-    }) => void;
 };
 
 const formatSize = (bytes: number) => {
@@ -89,17 +77,6 @@ const AssetTableRow: FC<{
     chatFullInfoById?: Record<string, ApiChatFullInfo>;
     uploadProgressByMessageKey?: Record<string, { progress: number }>;
     activeDownloads?: ActiveDownloads;
-    favoriteKeys?: Record<string, true>;
-    onAddFavorite?: (params: {
-        sourceChatId: string;
-        sourceTitle?: string;
-        file: ApiMessage;
-        fileName?: string;
-    }) => void;
-    onRemoveFavorite?: (params: {
-        sourceChatId: string;
-        messageId: number;
-    }) => void;
 }> = memo(({
     id,
     sourceChatId,
@@ -118,9 +95,6 @@ const AssetTableRow: FC<{
     chatFullInfoById,
     uploadProgressByMessageKey,
     activeDownloads,
-    favoriteKeys,
-    onAddFavorite,
-    onRemoveFavorite,
 }) => {
     const oldLang = useOldLang();
     const lang = useLang();
@@ -128,7 +102,6 @@ const AssetTableRow: FC<{
     const [renaming, setRenaming] = useState(false);
     const [renameValue, setRenameValue] = useState('');
     const [shareModalOpen, setShareModalOpen] = useState(false);
-    const [isFavoriting, setIsFavoriting] = useState(false);
     const rowMenuRef = useRef<HTMLDivElement>();
 
     useClickOutside([rowMenuRef], () => {
@@ -151,8 +124,6 @@ const AssetTableRow: FC<{
     const uploadProgress = uploadProgressByMessageKey?.[messageKey]?.progress;
     const downloadMediaHash = getMessageMediaHash(file, {}, 'download');
     const isDownloading = Boolean(downloadMediaHash && activeDownloads?.[downloadMediaHash]);
-    const favoriteKey = `${sourceChatId}:${file.id}`;
-    const isFavorite = Boolean(favoriteKeys?.[favoriteKey]);
 
     const sourceChat = sourceChatId && chatsById
         ? chatsById[sourceChatId]
@@ -274,52 +245,6 @@ const AssetTableRow: FC<{
         });
     };
 
-    const handleFavorite = async (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setMenuOpen(false);
-
-        if (!currentUserId || isFavoriting) return;
-
-        if (isFavorite) {
-            // Remove from favorites: delete from Saved Messages via callback
-            if (!onRemoveFavorite) return;
-            setIsFavoriting(true);
-            try {
-                onRemoveFavorite({ sourceChatId, messageId: file.id });
-            } finally {
-                setIsFavoriting(false);
-            }
-            return;
-        }
-
-        // Add to favorites: forward file to Saved Messages
-        if (!onAddFavorite) return;
-
-        const sourceChat = chatsById?.[sourceChatId];
-        const savedMessagesChat = chatsById?.[currentUserId];
-
-        if (!sourceChat || !savedMessagesChat) return;
-
-        setIsFavoriting(true);
-
-        try {
-            await callApi('forwardMessages', {
-                fromChat: sourceChat,
-                toChat: savedMessagesChat,
-                messages: [file],
-            });
-
-            onAddFavorite({
-                sourceChatId,
-                sourceTitle: getDriveUiName(sourceChatTitle) || sourceChatTitle,
-                file,
-                fileName,
-            });
-        } finally {
-            setIsFavoriting(false);
-        }
-    };
-
     const handleRenameStart = (e: React.MouseEvent) => {
         e.stopPropagation();
         setMenuOpen(false);
@@ -426,14 +351,6 @@ const AssetTableRow: FC<{
 
             <div className="AssetTable-col actions-col" onClick={(e) => e.stopPropagation()} ref={rowMenuRef}>
                 <button
-                    className={`row-favorite-btn ${isFavorite ? 'active' : ''}`}
-                    onClick={handleFavorite}
-                    disabled={!currentUserId || isFavoriting}
-                    title={isFavorite ? lang('DriveMenuUnfavorite') : lang('DriveMenuFavorite')}
-                >
-                    <i className={`icon ${isFavorite ? 'icon-heart' : 'icon-heart-outline'}`} />
-                </button>
-                <button
                     className="row-action-btn"
                     onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
                     title={lang('AccDescrMoreOptions')}
@@ -528,9 +445,6 @@ const AssetTable: FC<OwnProps> = ({
     chatFullInfoById,
     uploadProgressByMessageKey,
     activeDownloads,
-    favoriteKeys,
-    onAddFavorite,
-    onRemoveFavorite,
 }) => {
     const lang = useLang();
 
@@ -572,9 +486,6 @@ const AssetTable: FC<OwnProps> = ({
                             chatFullInfoById={chatFullInfoById}
                             uploadProgressByMessageKey={uploadProgressByMessageKey}
                             activeDownloads={activeDownloads}
-                            favoriteKeys={favoriteKeys}
-                            onAddFavorite={onAddFavorite}
-                            onRemoveFavorite={onRemoveFavorite}
                         />
                     ))}
                     {files.length === 0 && (

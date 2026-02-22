@@ -206,6 +206,53 @@ export async function fetchMessages({
   };
 }
 
+export async function fetchSavedMessagesHistory({
+  offsetId,
+  limit,
+}: {
+  offsetId?: number;
+  limit: number;
+}) {
+  let result;
+
+  try {
+    result = await invokeRequest(new GramJs.messages.GetHistory({
+      hash: DEFAULT_PRIMITIVES.BIGINT,
+      maxId: DEFAULT_PRIMITIVES.INT,
+      minId: DEFAULT_PRIMITIVES.INT,
+      offsetDate: DEFAULT_PRIMITIVES.INT,
+      peer: new GramJs.InputPeerSelf(),
+      offsetId: offsetId ? Math.min(offsetId, MAX_INT_32) : DEFAULT_PRIMITIVES.INT,
+      addOffset: DEFAULT_PRIMITIVES.INT,
+      limit,
+    }), {
+      shouldThrow: true,
+    });
+  } catch (err) {
+    return undefined;
+  }
+
+  if (
+    !result
+    || result instanceof GramJs.messages.MessagesNotModified
+    || !result.messages
+  ) {
+    return undefined;
+  }
+
+  const messages = result.messages.map(buildApiMessage).filter(Boolean);
+  const users = result.users.map(buildApiUser).filter(Boolean);
+  const chats = result.chats.map((c) => buildApiChatFromPreview(c)).filter(Boolean);
+  const count = !(result instanceof GramJs.messages.Messages) && result.count;
+
+  return {
+    messages,
+    users,
+    chats,
+    count,
+  };
+}
+
 export async function fetchMessage({ chat, messageId }: { chat: ApiChat; messageId: number }) {
   const isChannel = getEntityTypeById(chat.id) === 'channel';
 

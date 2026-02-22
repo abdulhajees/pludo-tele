@@ -8,8 +8,6 @@ import type { ActiveDownloads } from '../../../types';
 import { getMessageContent } from '../../../global/helpers';
 import { getDocumentExtension } from '../../common/helpers/documentInfo';
 import { openSystemFilesDialog } from '../../../util/systemFilesDialog';
-import type { DriveFavoriteStoredItem } from '../../../util/driveFavoritesStore';
-import { getDriveFavoriteItems, removeDriveFavoriteItem, upsertDriveFavoriteItem } from '../../../util/driveFavoritesStore';
 import { getDriveUiName, isDriveFolderTitle, isDriveShareTitle, normalizeDriveSectionUi } from '../../../util/drive';
 import type { DriveSection, DriveSectionUi } from '../../../util/drive';
 
@@ -17,7 +15,6 @@ import useLang from '../../../hooks/useLang';
 import DriveHeader from './DriveHeader';
 import AssetTable from './AssetTable';
 import DriveFilePreview from './DriveFilePreview';
-import DriveNotifications from './DriveNotifications';
 import Composer from '../../common/Composer';
 import { DropAreaState } from '../composer/DropArea';
 
@@ -34,7 +31,6 @@ type OwnProps = {
 
 type StateProps = {
     messagesByChatId?: Record<string, Record<number, ApiMessage> | undefined>;
-    savedMessagesMessages?: Record<number, ApiMessage>;
     inviteLink?: string;
     driveFoldersIds?: string[];
     driveFoldersById?: Record<string, ApiChat>;
@@ -63,7 +59,6 @@ const DriveView: FC<OwnProps & StateProps> = ({
     threadId,
     isMobile,
     messagesByChatId,
-    savedMessagesMessages,
     inviteLink,
     section = 'my-files',
     currentUserId,
@@ -83,7 +78,6 @@ const DriveView: FC<OwnProps & StateProps> = ({
     const [activeTimeFilter, setActiveTimeFilter] = useState<TimeFilterType>('all');
     const [shouldSearchSpaces, setShouldSearchSpaces] = useState(false);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
-    const [favoriteItemsByKey, setFavoriteItemsByKey] = useState<Record<string, DriveFavoriteStoredItem>>({});
 
     const isAdmin = Boolean(isCurrentChatAdmin);
 
@@ -99,21 +93,6 @@ const DriveView: FC<OwnProps & StateProps> = ({
     useEffect(() => {
         setSelectedFile(undefined);
     }, [chatId, driveActiveSection]);
-
-    useEffect(() => {
-        if (!currentUserId) {
-            setFavoriteItemsByKey({});
-            return;
-        }
-
-        // Load IDB cache for fast initial display
-        void getDriveFavoriteItems(currentUserId).then((items) => {
-            setFavoriteItemsByKey(items);
-        });
-
-        // Ensure Saved Messages are loaded (source of truth)
-        getActions().loadViewportMessages({ chatId: currentUserId, threadId: MAIN_THREAD_ID });
-    }, [currentUserId]);
 
     const handleUploadClick = () => {
         openSystemFilesDialog('*', (e: Event) => {
@@ -175,41 +154,6 @@ const DriveView: FC<OwnProps & StateProps> = ({
         });
     };
 
-    // Back-fill savedMsgId into IDB whenever savedMessagesMessages is updated
-    useEffect(() => {
-        if (!currentUserId || !savedMessagesMessages) return;
-
-        Object.values(savedMessagesMessages).forEach((msg) => {
-            if (!msg?.forwardInfo?.fromChatId || !msg?.forwardInfo?.fromMessageId) return;
-            const { document, photo, video } = getMessageContent(msg);
-            if (!(document || photo || video)) return;
-
-            const key = `${msg.forwardInfo.fromChatId}:${msg.forwardInfo.fromMessageId}`;
-            const cached = favoriteItemsByKey[key];
-            if (cached && cached.savedMsgId === msg.id) return;
-
-            if (cached) {
-                // Update in-memory state
-                setFavoriteItemsByKey((prev) => {
-                    const entry = prev[key];
-                    if (!entry || entry.savedMsgId === msg.id) return prev;
-                    return { ...prev, [key]: { ...entry, savedMsgId: msg.id } };
-                });
-
-                // Persist savedMsgId to IDB
-                void upsertDriveFavoriteItem({
-                    sourceChatId: cached.sourceChatId,
-                    sourceTitle: cached.sourceTitle,
-                    messageId: cached.messageId,
-                    savedMsgId: msg.id,
-                    fileName: cached.fileName,
-                    file: cached.file,
-                }, currentUserId);
-            }
-        });
-    // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps
-    }, [savedMessagesMessages, currentUserId]);
-
     const allFiles = useMemo(() => {
         if (!messagesByChatId) return [];
 
@@ -244,53 +188,8 @@ const DriveView: FC<OwnProps & StateProps> = ({
             return allFiles.slice(0, 10);
         }
 
-        if (targetSection === 'favorites') {
-            const allFilesByKey: Record<string, DriveFileItem> = {};
-
-            allFiles.forEach((item) => {
-                allFilesByKey[`${item.sourceChatId}:${item.file.id}`] = item;
-            });
-
-            const seenKeys = new Set<string>();
-            const favItems: DriveFileItem[] = [];
-
-            // IDB is the authoritative list — always render all persisted favorites
-            Object.values(favoriteItemsByKey).forEach((stored) => {
-                const key = `${stored.sourceChatId}:${stored.messageId}`;
-                if (seenKeys.has(key)) return;
-                seenKeys.add(key);
-
-                const liveItem = allFilesByKey[key];
-                // Use live message data if available (up-to-date metadata),
-                // otherwise fall back to the snapshot stored in IDB
-                favItems.push(liveItem || {
-                    id: `${stored.sourceChatId}_${stored.messageId}`,
-                    sourceChatId: stored.sourceChatId,
-                    file: stored.file,
-                    sourceTitle: stored.sourceTitle,
-                });
-            });
-
-            // Supplement with any cross-device additions found in Saved Messages
-            // viewport that haven't been synced to IDB yet
-            Object.values(savedMessagesMessages || {}).forEach((msg) => {
-                if (!msg?.forwardInfo?.fromChatId || !msg?.forwardInfo?.fromMessageId) return;
-                const { document, photo, video } = getMessageContent(msg);
-                if (!(document || photo || video)) return;
-
-                const key = `${msg.forwardInfo.fromChatId}:${msg.forwardInfo.fromMessageId}`;
-                if (seenKeys.has(key)) return;
-                seenKeys.add(key);
-
-                const liveItem = allFilesByKey[key];
-                if (liveItem) favItems.push(liveItem);
-            });
-
-            return favItems.sort((a, b) => b.file.date - a.file.date);
-        }
-
         return allFiles;
-    }, [allFiles, section, driveActiveSection, currentUserId, favoriteItemsByKey, savedMessagesMessages]);
+    }, [allFiles, section, driveActiveSection]);
 
     const files = useMemo(() => {
         let result = sectionFiles;
@@ -359,111 +258,6 @@ const DriveView: FC<OwnProps & StateProps> = ({
         { id: '30d', label: lang('DriveFilterTime30d') },
     ];
 
-    // Build favoriteKeys primarily from live Saved Messages (cross-device truth)
-    const favoriteKeys = useMemo(() => {
-        const map: Record<string, true> = {};
-
-        // Primary: scan saved messages for forwarded file messages
-        Object.values(savedMessagesMessages || {}).forEach((msg) => {
-            if (!msg?.forwardInfo?.fromChatId || !msg?.forwardInfo?.fromMessageId) return;
-            const { document, photo, video } = getMessageContent(msg);
-            if (!(document || photo || video)) return;
-            map[`${msg.forwardInfo.fromChatId}:${msg.forwardInfo.fromMessageId}`] = true;
-        });
-
-        // Fallback: IDB cache items (shown before saved messages load)
-        Object.values(favoriteItemsByKey).forEach((entry) => {
-            map[`${entry.sourceChatId}:${entry.messageId}`] = true;
-        });
-
-        return map;
-    }, [savedMessagesMessages, favoriteItemsByKey]);
-
-    // Map favKey → saved messages message ID (needed to delete when un-favoriting)
-    // Checks IDB-stored savedMsgId first (covers older messages not in viewport),
-    // then live savedMessagesMessages viewport as a secondary source.
-    const savedMsgIdByFavKey = useMemo(() => {
-        const map: Record<string, number> = {};
-
-        // IDB-stored savedMsgId (persisted after the first viewport load)
-        Object.values(favoriteItemsByKey).forEach((entry) => {
-            if (entry.savedMsgId) {
-                map[`${entry.sourceChatId}:${entry.messageId}`] = entry.savedMsgId;
-            }
-        });
-
-        // Live viewport — overrides IDB if present (freshest data)
-        Object.values(savedMessagesMessages || {}).forEach((msg) => {
-            if (!msg?.forwardInfo?.fromChatId || !msg?.forwardInfo?.fromMessageId) return;
-            map[`${msg.forwardInfo.fromChatId}:${msg.forwardInfo.fromMessageId}`] = msg.id;
-        });
-
-        return map;
-    }, [savedMessagesMessages, favoriteItemsByKey]);
-
-    const handleAddFavorite = (params: {
-        sourceChatId: string;
-        sourceTitle?: string;
-        file: ApiMessage;
-        fileName?: string;
-    }) => {
-        if (!currentUserId) return;
-
-        const key = `${params.sourceChatId}:${params.file.id}`;
-        const nextItem: DriveFavoriteStoredItem = {
-            key,
-            sourceChatId: params.sourceChatId,
-            sourceTitle: params.sourceTitle,
-            messageId: params.file.id,
-            fileName: params.fileName,
-            file: params.file,
-            addedAt: Date.now(),
-        };
-
-        // Optimistic IDB cache update
-        setFavoriteItemsByKey((prev) => ({
-            ...prev,
-            [key]: prev[key] ? { ...nextItem, addedAt: prev[key].addedAt } : nextItem,
-        }));
-
-        void upsertDriveFavoriteItem({
-            sourceChatId: params.sourceChatId,
-            sourceTitle: params.sourceTitle,
-            messageId: params.file.id,
-            fileName: params.fileName,
-            file: params.file,
-        }, currentUserId);
-    };
-
-    const handleRemoveFavorite = (params: { sourceChatId: string; messageId: number }) => {
-        if (!currentUserId) return;
-
-        const key = `${params.sourceChatId}:${params.messageId}`;
-
-        // Delete the forwarded message from Saved Messages (Telegram source of truth)
-        const savedMsgId = savedMsgIdByFavKey[key];
-        if (savedMsgId) {
-            getActions().deleteMessages({
-                messageIds: [savedMsgId],
-                shouldDeleteForAll: false,
-                messageList: {
-                    chatId: currentUserId,
-                    threadId: MAIN_THREAD_ID,
-                    type: 'thread',
-                },
-            });
-        }
-
-        // Optimistic IDB cache removal
-        setFavoriteItemsByKey((prev) => {
-            const next = { ...prev };
-            delete next[key];
-            return next;
-        });
-
-        void removeDriveFavoriteItem(key, currentUserId);
-    };
-
     const matchingSpaces = useMemo(() => {
         if (!shouldSearchSpaces || !searchQuery.trim()) {
             return [];
@@ -508,8 +302,6 @@ const DriveView: FC<OwnProps & StateProps> = ({
             ? lang('DriveTitleSharedWithMe')
             : driveSection === 'recent'
                 ? lang('Recent')
-                : driveSection === 'favorites'
-                    ? lang('DriveTitleFavorites')
                 : lang('DriveTitleYourDrive');
 
     const driveSubtitle = chatId
@@ -518,8 +310,6 @@ const DriveView: FC<OwnProps & StateProps> = ({
             ? lang('DriveSubtitleSharedWithMe')
             : driveSection === 'recent'
                 ? lang('DriveSubtitleRecent')
-                : driveSection === 'favorites'
-                    ? lang('DriveSubtitleFavorites')
                 : lang('DriveSubtitleYourDrive');
 
     const selectedThreadId = selectedFile?.sourceChatId === chatId ? threadId : undefined;
@@ -554,58 +344,51 @@ const DriveView: FC<OwnProps & StateProps> = ({
                 onToggleSearchSpaces={() => setShouldSearchSpaces((prev) => !prev)}
             />
             <div className="DriveView-body">
-                {driveActiveSection === 'notifications' ? (
-                    <DriveNotifications />
-                ) : (
-                    <div className="DriveView-content custom-scroll">
-                        <div className="DriveView-page-header">
-                            <h1>{driveTitle}</h1>
-                            <p>{driveSubtitle}</p>
-                        </div>
-
-                        <div className="DriveView-filters">
-                            {filters.map((f) => (
-                                <button
-                                    key={f.id}
-                                    className={`filter-pill ${activeFilter === f.id ? 'active' : ''}`}
-                                    onClick={() => setActiveFilter(f.id)}
-                                >
-                                    {f.label}
-                                </button>
-                            ))}
-                        </div>
-
-                        <div className="DriveView-filters secondary">
-                            {timeFilters.map((f) => (
-                                <button
-                                    key={f.id}
-                                    className={`filter-pill ${activeTimeFilter === f.id ? 'active' : ''}`}
-                                    onClick={() => setActiveTimeFilter(f.id)}
-                                >
-                                    {f.label}
-                                </button>
-                            ))}
-                            <button
-                                className={`filter-pill ${shouldSearchSpaces ? 'active' : ''}`}
-                                onClick={() => setShouldSearchSpaces((prev) => !prev)}
-                            >
-                                {lang('DriveFilterSearchSpaces')}
-                            </button>
-                        </div>
-
-                        <AssetTable
-                            files={files}
-                            chatId={chatId}
-                            threadId={threadId}
-                            onFileSelect={setSelectedFile}
-                            isAdmin={isAdmin}
-                            tableMode={driveSection === 'sharing' ? 'sharing' : 'space'}
-                            favoriteKeys={favoriteKeys}
-                            onAddFavorite={handleAddFavorite}
-                            onRemoveFavorite={handleRemoveFavorite}
-                        />
+                <div className="DriveView-content custom-scroll">
+                    <div className="DriveView-page-header">
+                        <h1>{driveTitle}</h1>
+                        <p>{driveSubtitle}</p>
                     </div>
-                )}
+
+                    <div className="DriveView-filters">
+                        {filters.map((f) => (
+                            <button
+                                key={f.id}
+                                className={`filter-pill ${activeFilter === f.id ? 'active' : ''}`}
+                                onClick={() => setActiveFilter(f.id)}
+                            >
+                                {f.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="DriveView-filters secondary">
+                        {timeFilters.map((f) => (
+                            <button
+                                key={f.id}
+                                className={`filter-pill ${activeTimeFilter === f.id ? 'active' : ''}`}
+                                onClick={() => setActiveTimeFilter(f.id)}
+                            >
+                                {f.label}
+                            </button>
+                        ))}
+                        <button
+                            className={`filter-pill ${shouldSearchSpaces ? 'active' : ''}`}
+                            onClick={() => setShouldSearchSpaces((prev) => !prev)}
+                        >
+                            {lang('DriveFilterSearchSpaces')}
+                        </button>
+                    </div>
+
+                    <AssetTable
+                        files={files}
+                        chatId={chatId}
+                        threadId={threadId}
+                        onFileSelect={setSelectedFile}
+                        isAdmin={isAdmin}
+                        tableMode={driveSection === 'sharing' ? 'sharing' : 'space'}
+                    />
+                </div>
 
                 {shouldSearchSpaces && searchQuery.trim().length > 0 && (
                     <div className="DriveView-spaceSearchModal" onClick={() => setSearchQuery('')}>
@@ -695,7 +478,7 @@ export default memo(withGlobal<OwnProps>(
 
             const sourceChats = driveActiveSection === 'sharing'
                 ? shareFolders
-                : (driveActiveSection === 'recent' || driveActiveSection === 'favorites')
+                : (driveActiveSection === 'recent')
                     ? [...driveFolders, ...shareFolders]
                     : driveFolders;
 
@@ -707,9 +490,6 @@ export default memo(withGlobal<OwnProps>(
 
         return {
             messagesByChatId,
-            savedMessagesMessages: global.currentUserId
-                ? selectChatMessages(global, global.currentUserId)
-                : undefined,
             inviteLink,
             driveFoldersIds,
             driveFoldersById: global.chats.byId,

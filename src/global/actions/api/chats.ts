@@ -810,6 +810,13 @@ addActionHandler('createChannel', async (global, actions, payload): Promise<void
   if (channelId && accessHash && photo) {
     await callApi('editChatPhoto', { chatId: channelId, accessHash, photo });
   }
+
+  if (title?.toLowerCase().startsWith('pludo-drive_')) {
+    actions.syncDriveChatFolders();
+    setTimeout(() => {
+      actions.syncDriveChatFolders();
+    }, 1500);
+  }
 });
 
 addActionHandler('joinChannel', async (global, actions, payload): Promise<void> => {
@@ -1180,6 +1187,8 @@ addActionHandler('editChatFolders', (global, actions, payload): ActionReturnType
 addActionHandler('editChatFolder', (global, actions, payload): ActionReturnType => {
   const { id, folderUpdate } = payload;
   const folder = selectChatFolder(global, id);
+  const chatsLimit = selectCurrentLimit(global, 'dialogFiltersChats');
+  const pinnedLimit = selectCurrentLimit(global, 'dialogFolderPinned');
 
   if (folder) {
     void callApi('editChatFolder', {
@@ -1187,8 +1196,14 @@ addActionHandler('editChatFolder', (global, actions, payload): ActionReturnType 
       folderUpdate: {
         id,
         emoticon: folder.emoticon,
-        pinnedChatIds: folder.pinnedChatIds,
+        pinnedChatIds: Array.from(new Set(folder.pinnedChatIds || [])).slice(0, pinnedLimit),
         ...folderUpdate,
+        includedChatIds: Array.from(new Set((folderUpdate.includedChatIds || folder.includedChatIds || [])))
+          .slice(0, chatsLimit),
+        excludedChatIds: Array.from(new Set((folderUpdate.excludedChatIds || folder.excludedChatIds || [])))
+          .slice(0, chatsLimit),
+        pinnedChatIds: Array.from(new Set((folderUpdate.pinnedChatIds || folder.pinnedChatIds || [])))
+          .slice(0, pinnedLimit),
       },
     });
   }
@@ -1208,6 +1223,8 @@ addActionHandler('addChatFolder', async (global, actions, payload): Promise<void
   }
 
   const maxId = Math.max(...(orderedIds || []), ARCHIVED_FOLDER_ID);
+  const chatsLimit = selectCurrentLimit(global, 'dialogFiltersChats');
+  const pinnedLimit = selectCurrentLimit(global, 'dialogFolderPinned');
 
   // Clear fields from recommended folders
   const { id: recommendedId, description, ...newFolder } = folder;
@@ -1216,11 +1233,19 @@ addActionHandler('addChatFolder', async (global, actions, payload): Promise<void
   const folderUpdate = {
     id: newId,
     ...newFolder,
+    includedChatIds: Array.from(new Set(newFolder.includedChatIds || [])).slice(0, chatsLimit),
+    excludedChatIds: Array.from(new Set(newFolder.excludedChatIds || [])).slice(0, chatsLimit),
+    pinnedChatIds: Array.from(new Set(newFolder.pinnedChatIds || [])).slice(0, pinnedLimit),
   };
-  await callApi('editChatFolder', {
-    id: newId,
-    folderUpdate,
-  });
+  try {
+    await callApi('editChatFolder', {
+      id: newId,
+      folderUpdate,
+    });
+  } catch (error) {
+    actions.showDialog({ data: { ...(error as ApiError), hasErrorKey: true }, tabId });
+    return;
+  }
 
   // Update called from the above `callApi` is throttled, but we need to apply changes immediately
   actions.apiUpdate({
@@ -3627,6 +3652,8 @@ export async function ensureIsSuperGroup<T extends GlobalState>(
 addActionHandler('syncDriveChatFolders', async (global: any, actions: any): Promise<void> => {
   const currentUserId = global.currentUserId;
   if (!currentUserId) return;
+  const chatsPerFolderLimit = selectCurrentLimit(global, 'dialogFiltersChats');
+  const pinnedPerFolderLimit = selectCurrentLimit(global, 'dialogFolderPinned');
 
   const allChats = Object.values(global.chats.byId || {}) as any[];
   const fullInfoById = global.chats.fullInfoById || {};
@@ -3662,31 +3689,82 @@ addActionHandler('syncDriveChatFolders', async (global: any, actions: any): Prom
   const { byId, orderedIds } = global.chatFolders || { byId: {}, orderedIds: [] };
   const existingFolders = Object.values(byId) as any[];
 
+  const extractFolderTitleText = (title?: unknown) => {
+    if (typeof title === 'string') return title;
+    if (title && typeof title === 'object' && 'text' in (title as Record<string, unknown>)) {
+      const text = (title as { text?: unknown }).text;
+      return typeof text === 'string' ? text : '';
+    }
+    return String(title || '');
+  };
+
+  const normalizeFolderTitle = (title?: unknown) => extractFolderTitleText(title)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+  const findExistingFolderFor = (targetTitle: string) => {
+    const normalizedTarget = normalizeFolderTitle(targetTitle);
+
+    return existingFolders.find((folder: any) => {
+      const normalizedCurrent = normalizeFolderTitle(folder.title);
+      if (normalizedCurrent === normalizedTarget) return true;
+
+      if (normalizedTarget === 'pludop2p') {
+        return normalizedCurrent === 'pludop2p';
+      }
+
+      if (normalizedTarget === 'pludopriv') {
+        return normalizedCurrent === 'pludopriv'
+          || normalizedCurrent === 'pludoprivatespaces';
+      }
+
+      if (normalizedTarget === 'pludoshare') {
+        return normalizedCurrent === 'pludoshare'
+          || normalizedCurrent === 'pludosharedspaces';
+      }
+
+      return false;
+    });
+  };
+
   const targetFolders = [
     { title: 'Pludo-P2P', ids: p2pIds },
-    { title: 'Pludo-Private-spaces', ids: privateSpacesIds },
-    { title: 'Pludo-shared-spaces', ids: sharedSpacesIds },
-  ];
+    { title: 'PludoPriv', ids: privateSpacesIds },
+    { title: 'PludoShare', ids: sharedSpacesIds },
+  ].map((folder) => ({
+    ...folder,
+    ids: Array.from(new Set(folder.ids)).slice(0, chatsPerFolderLimit),
+  }));
+
+  const safeIncludedIds = (ids?: string[]) => Array.from(new Set(ids || [])).slice(0, chatsPerFolderLimit);
+  const safeExcludedIds = (ids?: string[]) => Array.from(new Set(ids || [])).slice(0, chatsPerFolderLimit);
+  const safePinnedIds = (ids?: string[]) => Array.from(new Set(ids || [])).slice(0, pinnedPerFolderLimit);
+
+  const hasSameIncludedIds = (currentIds?: string[], nextIds?: string[]) => {
+    const current = safeIncludedIds(currentIds).sort().join(',');
+    const next = safeIncludedIds(nextIds).sort().join(',');
+    return current === next;
+  };
 
   for (const target of targetFolders) {
-    let folder = existingFolders.find((f: any) => f.title === target.title);
+    let folder = findExistingFolderFor(target.title);
 
     if (folder) {
-      const currentIdsStr = [...(folder.includedChatIds || [])].sort().join(',');
-      const targetIdsStr = [...target.ids].sort().join(',');
-      if (currentIdsStr !== targetIdsStr) {
+      if (!hasSameIncludedIds(folder.includedChatIds, target.ids)) {
         actions.editChatFolder({
           id: folder.id,
           folderUpdate: {
             ...folder,
-            includedChatIds: target.ids,
+            includedChatIds: safeIncludedIds(target.ids),
+            excludedChatIds: safeExcludedIds(folder.excludedChatIds),
+            pinnedChatIds: safePinnedIds(folder.pinnedChatIds),
           }
         });
       }
     } else {
       actions.addChatFolder({
         folder: {
-          title: target.title,
+          title: { text: target.title },
           includedChatIds: target.ids,
           excludedChatIds: [],
           pinnedChatIds: [],

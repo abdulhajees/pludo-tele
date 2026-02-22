@@ -101,6 +101,7 @@
 "DriveMenuFavorite" = "Favorite";
 "DriveMenuFavorited" = "Favorited";
 "DriveMenuUnfavorite" = "Remove from Favorites";
+"DriveMenuUnfavoriteConfirm" = "Remove from favorites?";
 "ShowSidebar" = "Show sidebar";
 "HideSidebar" = "Hide sidebar";
 "DriveCreateTitle" = "Create New Space";

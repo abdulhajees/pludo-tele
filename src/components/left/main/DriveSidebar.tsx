@@ -42,8 +42,6 @@ const navigationLinks: { id: DriveSectionUi; icon: string }[] = [
     { id: 'my-files', icon: 'icon-document' },
     { id: 'sharing', icon: 'icon-user' },
     { id: 'recent', icon: 'icon-recent' },
-    { id: 'favorites', icon: 'icon-heart' },
-    { id: 'notifications', icon: 'icon-info' },
 ];
 
 function getIsFolderAdmin(folder: ApiChat) {
@@ -202,8 +200,6 @@ const DriveSidebar: FC<OwnProps & StateProps> = ({
                             {link.id === 'my-files' && lang('DriveNavMyFiles')}
                             {link.id === 'sharing' && lang('DriveNavSharing')}
                             {link.id === 'recent' && lang('Recent')}
-                            {link.id === 'favorites' && lang('DriveNavFavorites')}
-                            {link.id === 'notifications' && lang('Notifications')}
                         </span>
                     </div>
                 ))}
