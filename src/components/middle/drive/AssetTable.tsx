@@ -145,7 +145,13 @@ const AssetTableRow: FC<{
     const sharedByUser = sharedByUsername ? usersByUsername?.[sharedByUsername] : undefined;
     const sharedWithUser = sharedWithUsername ? usersByUsername?.[sharedWithUsername] : undefined;
     const modifiedByUser = file.senderId ? usersById?.[file.senderId] : undefined;
-    const isModifiedByMe = Boolean(!file.senderId || file.senderId === currentUserId);
+    const isModifiedByMe = Boolean(
+        (file.senderId && file.senderId === currentUserId)
+        || (!file.senderId && (file.isOutgoing || sourceChat?.isCreator)),
+    );
+    const modifiedByFallbackName = !isModifiedByMe && file.postAuthorTitle
+        ? file.postAuthorTitle
+        : lang('DriveTableSenderUnknown');
 
     const sharedByName = participants
         ? (isSender
@@ -325,7 +331,8 @@ const AssetTableRow: FC<{
                     <ParticipantInfo
                         user={modifiedByUser}
                         isMe={isModifiedByMe}
-                        fallbackName={lang('DriveTableSenderUnknown')}
+                        fallbackName={modifiedByFallbackName}
+                        useFirstName
                     />
                 )}
             </div>
@@ -398,17 +405,21 @@ const ParticipantInfo = ({
     user,
     isMe,
     fallbackName,
+    useFirstName,
 }: {
     user?: ApiUser;
     isMe?: boolean;
     fallbackName: string;
+    useFirstName?: boolean;
 }) => {
     const lang = useLang();
 
     const name = isMe
         ? lang('DriveTableSenderMe')
         : user
-            ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.usernames?.[0]?.username || lang('DriveTableSenderUser')
+            ? (useFirstName
+                ? (user.firstName || user.usernames?.[0]?.username || lang('DriveTableSenderUser'))
+                : (`${user.firstName || ''} ${user.lastName || ''}`.trim() || user.usernames?.[0]?.username || lang('DriveTableSenderUser')))
             : fallbackName;
 
     return (

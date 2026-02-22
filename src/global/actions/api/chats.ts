@@ -734,6 +734,7 @@ addActionHandler('createChannel', async (global, actions, payload): Promise<void
   const {
     title, about, photo, memberIds, discussionChannelId, tabId = getCurrentTabId(),
   } = payload;
+  const currentUserId = global.currentUserId;
   const isChannel = 'isChannel' in payload ? payload.isChannel : undefined;
   const isSuperGroup = 'isSuperGroup' in payload ? payload.isSuperGroup : undefined;
 
@@ -812,6 +813,19 @@ addActionHandler('createChannel', async (global, actions, payload): Promise<void
   }
 
   if (title?.toLowerCase().startsWith('pludo-drive_')) {
+    actions.toggleSignatures({
+      chatId: channelId,
+      areSignaturesEnabled: true,
+      areProfilesEnabled: true,
+    });
+
+    if (currentUserId) {
+      actions.saveDefaultSendAs({
+        chatId: channelId,
+        sendAsId: currentUserId,
+      });
+    }
+
     actions.syncDriveChatFolders();
     setTimeout(() => {
       actions.syncDriveChatFolders();
@@ -3665,9 +3679,31 @@ addActionHandler('syncDriveChatFolders', async (global: any, actions: any): Prom
   allChats.forEach((chat: any) => {
     if (!chat || chat.isNotJoined || chat.isRestricted || !chat.title) return;
 
-    const chatAbout = fullInfoById[chat.id]?.about;
+    const chatFullInfo = fullInfoById[chat.id];
+    const chatAbout = chatFullInfo?.about;
+    const isDriveShare = isDriveShareTitle(chat.title, chatAbout);
+    const isDriveFolder = isDriveFolderTitle(chat.title, chatAbout);
 
-    if (isDriveShareTitle(chat.title, chatAbout)) {
+    if (!isDriveShare && !isDriveFolder) return;
+
+    const canConfigureAuthorSettings = Boolean(chat.isCreator || chat.adminRights?.postMessages);
+
+    if (canConfigureAuthorSettings && (!chat.areSignaturesShown || !chat.areProfilesShown)) {
+      actions.toggleSignatures({
+        chatId: chat.id,
+        areSignaturesEnabled: true,
+        areProfilesEnabled: true,
+      });
+    }
+
+    if (canConfigureAuthorSettings && chatFullInfo?.sendAsId !== currentUserId) {
+      actions.saveDefaultSendAs({
+        chatId: chat.id,
+        sendAsId: currentUserId,
+      });
+    }
+
+    if (isDriveShare) {
       const participants = getDriveShareParticipants(chat.title, chatAbout);
       const currentUser = global.users.byId[currentUserId] as any;
 
@@ -3677,7 +3713,7 @@ addActionHandler('syncDriveChatFolders', async (global: any, actions: any): Prom
           p2pIds.push(chat.id);
         }
       }
-    } else if (isDriveFolderTitle(chat.title, chatAbout)) {
+    } else if (isDriveFolder) {
       if ((chat.membersCount || 1) > 1) {
         sharedSpacesIds.push(chat.id);
       } else {
