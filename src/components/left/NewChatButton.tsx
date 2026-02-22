@@ -17,80 +17,49 @@ import './NewChatButton.scss';
 
 type OwnProps = {
   isShown: boolean;
-  onNewPrivateChat: () => void;
-  onNewChannel: () => void;
-  onNewGroup: () => void;
   isAccountFrozen?: boolean;
 };
 
 const NewChatButton: FC<OwnProps> = ({
   isShown,
-  onNewPrivateChat,
-  onNewChannel,
-  onNewGroup,
   isAccountFrozen,
 }) => {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { openFrozenAccountModal } = getActions();
-
-  const shouldRender = isShown || isMenuOpen;
-
-  useEffect(() => {
-    if (!shouldRender) {
-      setIsMenuOpen(false);
-    }
-  }, [shouldRender]);
+  const { openFrozenAccountModal, createChannel } = getActions();
 
   const lang = useOldLang();
 
   const fabClassName = buildClassName(
     'NewChatButton',
-    shouldRender && 'revealed',
-    isMenuOpen && 'menu-is-open',
+    isShown && 'revealed',
   );
 
-  const toggleIsMenuOpen = useCallback(() => {
+  const handleCreateFolder = useCallback(() => {
     if (isAccountFrozen) {
       openFrozenAccountModal();
       return;
     }
-    setIsMenuOpen(!isMenuOpen);
-  }, [isMenuOpen, isAccountFrozen]);
-
-  const handleClose = useCallback(() => {
-    setIsMenuOpen(false);
-  }, []);
-
-  const menuItems = useMemo(() => (
-    <>
-      <MenuItem icon="channel" onClick={onNewChannel}>{lang('NewChannel')}</MenuItem>
-      <MenuItem icon="group" onClick={onNewGroup}>{lang('NewGroup')}</MenuItem>
-      <MenuItem icon="user" onClick={onNewPrivateChat}>{lang('NewMessageTitle')}</MenuItem>
-    </>
-  ), [lang, onNewChannel, onNewGroup, onNewPrivateChat]);
+    const folderName = window.prompt(lang('EnterFolderName') || 'Enter a name for the new folder:');
+    if (folderName && folderName.trim().length > 0) {
+      createChannel({
+        title: `pludo-drive_${folderName.trim()}`,
+        about: '',
+        memberIds: [],
+        isChannel: true,
+      });
+    }
+  }, [isAccountFrozen, openFrozenAccountModal, createChannel, lang]);
 
   return (
     <div className={fabClassName} dir={lang.isRtl ? 'rtl' : undefined}>
       <Button
         round
         color="primary"
-        className={isMenuOpen ? 'active' : ''}
-        onClick={toggleIsMenuOpen}
-        ariaLabel={lang(isMenuOpen ? 'Close' : 'NewMessageTitle')}
+        onClick={handleCreateFolder}
+        ariaLabel={lang('NewFolder') || 'New Folder'}
         tabIndex={-1}
       >
-        <Icon name="new-chat-filled" />
-        <Icon name="close" />
+        <Icon name="channel" />
       </Button>
-      <Menu
-        isOpen={isMenuOpen}
-        positionX={lang.isRtl ? 'left' : 'right'}
-        positionY="bottom"
-        autoClose
-        onClose={handleClose}
-      >
-        {menuItems}
-      </Menu>
     </div>
   );
 };

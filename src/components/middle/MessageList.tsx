@@ -22,6 +22,7 @@ import {
   isChatGroup,
   isChatMonoforum,
   isSystemBot,
+  hasMessageMedia,
 } from '../../global/helpers';
 import {
   selectBot,
@@ -327,52 +328,11 @@ const MessageList = ({
       const prevMessage = listedMessages[listedMessages.length - 1];
 
       const message = messagesById[id];
-      if (!message) {
+      if (!message || !hasMessageMedia(message)) {
         return;
       }
 
-      const { shouldAppendJoinMessage, shouldAppendJoinMessageAfterCurrent } = (() => {
-        if (!channelJoinInfo || type !== 'thread') return undefined;
-        if (prevMessage
-          && prevMessage.date < channelJoinInfo.joinedDate && channelJoinInfo.joinedDate <= message.date) {
-          return { shouldAppendJoinMessage: true, shouldAppendJoinMessageAfterCurrent: false };
-        }
-
-        if (index === arr.length - 1 && message.date < channelJoinInfo.joinedDate) {
-          return {
-            shouldAppendJoinMessage: true,
-            shouldAppendJoinMessageAfterCurrent: true,
-          };
-        }
-
-        return undefined;
-      })() || {};
-
-      if (shouldAppendJoinMessageAfterCurrent) {
-        listedMessages.push(message);
-      }
-
-      if (shouldAppendJoinMessage) {
-        const lastMessageId = shouldAppendJoinMessageAfterCurrent ? message.id : (prevMessage?.id || (message.id - 1));
-        listedMessages.push({
-          id: generateChannelJoinMessageId(lastMessageId),
-          chatId: message.chatId,
-          date: channelJoinInfo!.joinedDate,
-          isOutgoing: false,
-          content: {
-            action: {
-              mediaType: 'action',
-              type: 'channelJoined',
-              inviterId: channelJoinInfo?.inviterId,
-              isViaRequest: channelJoinInfo?.isViaRequest || undefined,
-            },
-          },
-        } satisfies ApiMessage);
-      }
-
-      if (!shouldAppendJoinMessageAfterCurrent) {
-        listedMessages.push(message);
-      }
+      listedMessages.push(message);
     });
 
     // Service notifications have local IDs which may be not in sync with real message history

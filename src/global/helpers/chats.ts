@@ -95,6 +95,9 @@ export function getChatTitle(lang: OldLangFn | LangFn, chat: ApiChat, isSelf = f
   if (isSelf) {
     return lang('SavedMessages');
   }
+  if (chat.title && chat.title.startsWith('pludo-drive_')) {
+    return chat.title.replace(/^pludo-drive_/, '') || lang('HiddenName');
+  }
   return chat.title || lang('HiddenName');
 }
 

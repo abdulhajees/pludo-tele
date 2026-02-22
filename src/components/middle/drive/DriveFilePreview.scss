@@ -1,0 +1,285 @@
+.DriveFilePreview {
+    width: 280px;
+    flex-shrink: 0;
+    border-left: 1px solid #f0effe;
+    background: white;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+
+    .DriveFilePreview-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid #f4f3ff;
+
+        .preview-title {
+            font-weight: 700;
+            font-size: 0.9rem;
+            color: #1e1b4b;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #9ca3af;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            padding: 4px;
+            transition: background 0.12s, color 0.12s;
+
+            &:hover {
+                background: #f5f3ff;
+                color: #6d28d9;
+            }
+
+            .icon {
+                font-size: 1rem;
+            }
+        }
+    }
+
+    .DriveFilePreview-body {
+        flex: 1;
+        padding: 1.5rem 1.25rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+
+        .preview-icon-box {
+            width: 80px;
+            height: 80px;
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.25rem;
+
+            .preview-icon {
+                font-size: 2rem;
+            }
+
+            .file-ext {
+                font-size: 0.6rem;
+                font-weight: 800;
+                letter-spacing: 0.05em;
+                opacity: 0.75;
+            }
+        }
+
+        .preview-file-name {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: #1e1b4b;
+            text-align: center;
+            word-break: break-word;
+            margin: 0;
+
+            .tag-display-container {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 0.35rem;
+
+                .tag-edit-icon {
+                    background: none;
+                    border: none;
+                    color: #9ca3af;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 4px;
+                    border-radius: 4px;
+                    opacity: 0;
+                    transition: opacity 0.15s, color 0.15s, background 0.15s;
+
+                    &:hover {
+                        color: #7c3aed;
+                        background: #f5f3ff;
+                    }
+
+                    .icon {
+                        font-size: 0.85rem;
+                    }
+                }
+
+                &:hover .tag-edit-icon {
+                    opacity: 1;
+                }
+            }
+
+            .tag-edit-container {
+                display: flex;
+                flex-direction: column;
+                gap: 0.5rem;
+                align-items: center;
+                width: 100%;
+
+                .tag-input {
+                    width: 100%;
+                    padding: 0.5rem 0.75rem;
+                    border-radius: 8px;
+                    border: 1px solid #e5e7eb;
+                    font-size: 0.85rem;
+                    font-family: inherit;
+                    color: #1e1b4b;
+                    background: #f9fafb;
+                    outline: none;
+                    transition: border-color 0.15s, box-shadow 0.15s;
+
+                    &:focus {
+                        border-color: #8B5CF6;
+                        box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+                        background: white;
+                    }
+                }
+
+                .tag-edit-actions {
+                    display: flex;
+                    gap: 0.5rem;
+                    width: 100%;
+
+                    .tag-btn {
+                        flex: 1;
+                        padding: 0.35rem;
+                        border-radius: 6px;
+                        font-size: 0.75rem;
+                        font-weight: 600;
+                        border: none;
+                        cursor: pointer;
+                        transition: all 0.15s;
+
+                        &.save {
+                            background: #8B5CF6;
+                            color: white;
+
+                            &:hover {
+                                background: #7c3aed;
+                            }
+                        }
+
+                        &.cancel {
+                            background: #f3f4f6;
+                            color: #4b5563;
+
+                            &:hover {
+                                background: #e5e7eb;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        .preview-meta {
+            width: 100%;
+            background: #faf9ff;
+            border-radius: 10px;
+            padding: 0.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+
+            .meta-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+
+                .meta-label {
+                    font-size: 0.75rem;
+                    color: #9ca3af;
+                    font-weight: 500;
+                }
+
+                .meta-value {
+                    font-size: 0.8rem;
+                    color: #374151;
+                    font-weight: 600;
+                }
+            }
+        }
+
+        .no-content-notice {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: #fef9ee;
+            border: 1px solid #fde68a;
+            border-radius: 8px;
+            padding: 0.625rem 0.875rem;
+            width: 100%;
+
+            .icon {
+                color: #f59e0b;
+                font-size: 1rem;
+            }
+
+            span {
+                font-size: 0.775rem;
+                color: #92400e;
+                line-height: 1.4;
+            }
+        }
+    }
+
+    .DriveFilePreview-actions {
+        padding: 1rem 1.25rem;
+        border-top: 1px solid #f4f3ff;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+
+        .preview-action-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+            padding: 0.55rem;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s, box-shadow 0.15s;
+
+            .icon {
+                font-size: 0.9rem;
+            }
+
+            &.primary {
+                background: #8B5CF6;
+                color: white;
+
+                &:hover {
+                    background: #7c3aed;
+                }
+            }
+
+            &.secondary {
+                background: #f5f3ff;
+                color: #6d28d9;
+
+                &:hover {
+                    background: #ede9fe;
+                }
+            }
+
+            &.danger {
+                background: #fef2f2;
+                color: #dc2626;
+
+                &:hover {
+                    background: #fee2e2;
+                }
+            }
+        }
+    }
+}

@@ -134,10 +134,21 @@
     overflow: visible !important;
     display: flex;
     align-items: center;
-    align-self: stretch;
+    align-self: center; // Center vertically
+    width: 28px !important; // Smaller, icon-like
+    height: 28px !important;
+    margin-right: 12px; // Space between icon and text
+
+    .Avatar {
+      width: 100% !important;
+      height: 100% !important;
+      border-radius: 6px !important; // Slightly rounded like a folder/app icon
+      font-size: 12px !important;
+    }
   }
 
   .avatar-badge-wrapper {
+    display: none !important;
     --outline-color: var(--color-background);
 
     position: absolute;
@@ -192,20 +203,42 @@
   .info {
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: center !important;
+    height: auto !important; // Auto height instead of fixed 100%
     transition: opacity 300ms ease, transform var(--layer-transition);
 
     body.no-page-transitions & {
       transition: opacity 300ms ease;
     }
 
+    .info-row {
+      height: auto !important;
+      line-height: normal !important;
+      align-items: center !important;
+
+      .separator,
+      .LastMessageMeta {
+        display: none !important; // Hide last message time for folder look
+      }
+
+      .title {
+        font-size: 0.9375rem !important; // Slightly smaller, cleaner font
+        font-weight: 500 !important;
+      }
+    }
+
+    .subtitle {
+      display: none !important; // Hide chat preview completely
+    }
+
     &.has-tags {
       justify-content: flex-start;
-      height: 3.75rem;
+      height: auto;
 
-      .info-row, .subtitle {
-        height: 1.25rem;
-        line-height: 1.25rem;
+      .info-row,
+      .subtitle {
+        height: auto;
+        line-height: normal;
       }
     }
 
@@ -252,6 +285,7 @@
     .last-message {
       overflow: hidden;
       display: flex;
+
       &-summary {
         overflow: hidden;
         flex: unset;
@@ -266,7 +300,8 @@
         margin-inline-end: 0.5ch;
       }
 
-      .colon, .chat-prefix-icon {
+      .colon,
+      .chat-prefix-icon {
         margin-inline-end: 0.1875rem;
       }
 
@@ -353,6 +388,7 @@
 
   // Super specific selector to override the same in `ListItem`
   @media (min-width: 600px) {
+
     &:not(.has-ripple):not(.is-static),
     body.no-page-transitions & {
       .ListItem-button:active {
@@ -376,6 +412,7 @@
   }
 
   @media (min-width: 600px) {
+
     &.selected:not(.forum),
     &.selected:not(.forum):hover {
       --background-color: var(--color-chat-active) !important;
@@ -384,7 +421,8 @@
         color: var(--color-white);
       }
 
-      .VerifiedIcon, .StarIcon {
+      .VerifiedIcon,
+      .StarIcon {
         --color-fill: #fff;
         --color-checkmark: var(--color-primary);
       }
@@ -435,6 +473,13 @@
   @media (max-width: 600px) {
     .ListItem-button {
       border-radius: 0 !important;
+      padding: 8px 16px !important; // Compact padding on mobile too
     }
+  }
+
+  .ListItem-button {
+    padding: 6px 16px !important; // Compact vertical padding for a dense list
+    min-height: 40px !important; // Override the tall default chat row height
+    align-items: center !important;
   }
 }

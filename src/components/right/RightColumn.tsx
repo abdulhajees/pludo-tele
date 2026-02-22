@@ -40,6 +40,7 @@ import MonetizationStatistics from './statistics/MonetizationStatistics';
 import Statistics from './statistics/Statistics.async';
 import StoryStatistics from './statistics/StoryStatistics.async';
 import StickerSearch from './StickerSearch.async';
+import FileDetails from './FileDetails';
 
 import './RightColumn.scss';
 
@@ -59,6 +60,7 @@ type StateProps = {
   isSavedMessages?: boolean;
   isSavedDialog?: boolean;
   isOwnProfile?: boolean;
+  selectedMessageId?: number;
 };
 
 const ANIMATION_DURATION = 450 + ANIMATION_END_DELAY;
@@ -85,6 +87,7 @@ const RightColumn: FC<OwnProps & StateProps> = ({
   isSavedMessages,
   isSavedDialog,
   isOwnProfile,
+  selectedMessageId,
 }) => {
   const {
     toggleChatInfo,
@@ -311,6 +314,16 @@ const RightColumn: FC<OwnProps & StateProps> = ({
           />
         );
       case RightColumnContent.ChatInfo:
+        if (selectedMessageId) {
+          return (
+            <FileDetails
+              key={`file_details_${chatId!}_${selectedMessageId}`}
+              chatId={chatId!}
+              messageId={selectedMessageId}
+              onClose={close}
+            />
+          );
+        }
         return (
           <Profile
             key={`profile_${chatId!}_${threadId}_${Boolean(isOwnProfile)}`}
@@ -318,7 +331,7 @@ const RightColumn: FC<OwnProps & StateProps> = ({
             threadId={threadId}
             profileState={profileState}
             isMobile={isMobile}
-            isActive={isOpen && isActive}
+            isActive={isOpen || Boolean(selectedMessageId)}
             onProfileStateChange={setProfileState}
           />
         );
@@ -419,7 +432,7 @@ export default memo(withGlobal<OwnProps>(
     const areActiveChatsLoaded = selectAreActiveChatsLoaded(global);
     const { animationLevel } = selectSharedSettings(global);
     const {
-      management, shouldSkipHistoryAnimations, shouldCloseRightColumn, chatInfo,
+      management, shouldSkipHistoryAnimations, shouldCloseRightColumn, chatInfo, selectedMessages,
     } = selectTabState(global);
     const nextManagementScreen = chatId ? management.byChatId[chatId]?.nextScreen : undefined;
 
@@ -427,8 +440,11 @@ export default memo(withGlobal<OwnProps>(
     const isSavedMessages = chatId && !isOwnProfile ? selectIsChatWithSelf(global, chatId) : undefined;
     const isSavedDialog = chatId ? getIsSavedDialog(chatId, threadId, global.currentUserId) : undefined;
 
+    const selectedMessageId = selectedMessages?.messageIds?.length === 1 ? selectedMessages.messageIds[0] : undefined;
+    const contentKey = selectedMessageId ? RightColumnContent.ChatInfo : selectRightColumnContentKey(global, isMobile);
+
     return {
-      contentKey: selectRightColumnContentKey(global, isMobile),
+      contentKey,
       chatId,
       threadId,
       isChatSelected: Boolean(chatId && areActiveChatsLoaded),
@@ -439,6 +455,7 @@ export default memo(withGlobal<OwnProps>(
       isSavedMessages,
       isSavedDialog,
       isOwnProfile,
+      selectedMessageId,
     };
   },
 )(RightColumn));

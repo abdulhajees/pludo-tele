@@ -116,6 +116,7 @@ export type TabState = {
   uiReadyState: 0 | 1 | 2;
   shouldInit: boolean;
   shouldSkipHistoryAnimations?: boolean;
+  driveActiveSection?: 'my_files' | 'sharing' | 'recent' | 'notifications';
 
   gifSearch: {
     query?: string;

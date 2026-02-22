@@ -249,3 +249,21 @@ addActionHandler('closeChatInviteModal', (global, actions, payload): ActionRetur
     chatInviteModal: undefined,
   }, tabId);
 });
+
+addActionHandler('setDriveActiveSection', (global, actions, payload): ActionReturnType => {
+  const { section, tabId = getCurrentTabId() } = payload;
+
+  if (section) {
+    // If we're setting a generic drive section, we should clear the actively selected folder chat
+    global = updateTabState(global, {
+      messageLists: global.byTabId[tabId].messageLists.filter((ml: any) => ml.type !== 'thread'),
+      driveActiveSection: section,
+    }, tabId);
+  } else {
+    global = updateTabState(global, {
+      driveActiveSection: undefined,
+    }, tabId);
+  }
+
+  return global;
+});

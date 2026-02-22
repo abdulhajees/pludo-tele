@@ -157,7 +157,7 @@ type PublicUsernameOrBotLinkBuilderParams = Omit<BuilderParams<PublicUsernameOrB
   direct?: string;
 };
 
-const ELIGIBLE_HOSTNAMES = new Set(['t.me', 'telegram.me', 'telegram.dog']);
+const ELIGIBLE_HOSTNAMES = new Set(['t.me', 'telegram.me', 'telegram.dog', 'pludo.systems']);
 
 export function isDeepLink(link: string): boolean {
   return Boolean(link.match(RE_TME_LINK) || link.match(RE_TG_LINK));
@@ -311,10 +311,10 @@ function parseHttpLink(url: URL) {
         thread: queryParams.thread,
         messageId: pathParams[1],
       } : {
-        username: pathParams[0],
-        thread: pathParams[1],
-        messageId: pathParams[2],
-      };
+          username: pathParams[0],
+          thread: pathParams[1],
+          messageId: pathParams[2],
+        };
       return buildPublicMessageLink({
         username,
         messageId,
@@ -337,10 +337,10 @@ function parseHttpLink(url: URL) {
         thread: queryParams.thread,
         messageId: pathParams[2],
       } : {
-        channelId: pathParams[1],
-        thread: pathParams[2],
-        messageId: pathParams[3],
-      };
+          channelId: pathParams[1],
+          thread: pathParams[2],
+          messageId: pathParams[3],
+        };
       return buildPrivateMessageLink({
         channelId,
         messageId,
@@ -808,6 +808,9 @@ function isNumber(s: string) {
 function getPathParams(url: URL) {
   const parts = url.pathname.split('/').filter(Boolean);
   if (parts[0] === 's') {
+    parts.shift();
+  }
+  if (url.hostname === 'pludo.systems' && parts[0] === 'drive') {
     parts.shift();
   }
   return parts.map(decodeURI);

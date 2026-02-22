@@ -532,7 +532,7 @@ function buildChatSummary<T extends GlobalState>(
   isRemovedFromSaved?: boolean,
 ): ChatSummary {
   const {
-    id, type, isNotJoined, migratedTo, folderId,
+    id, type, isNotJoined, migratedTo, folderId, title,
     unreadCount: chatUnreadCount, unreadMentionsCount: chatUnreadMentionsCount, hasUnreadMark,
     isForum,
   } = chat;
@@ -559,11 +559,13 @@ function buildChatSummary<T extends GlobalState>(
   const lastMessageInSaved = selectChatLastMessage(global, chat.id, 'saved');
   const orderInSaved = lastMessageInSaved?.date || 0;
 
+  const isDriveFolder = Boolean(title && title.startsWith('pludo-drive_'));
+
   return {
     id,
     type,
-    isListedInAll: Boolean(!isRestricted && !isNotJoined && !migratedTo && !shouldHideServiceChat && !isRemovedFromAll),
-    isListedInSaved: !isRemovedFromSaved,
+    isListedInAll: Boolean(!isRestricted && !isNotJoined && !migratedTo && !shouldHideServiceChat && !isRemovedFromAll && isDriveFolder),
+    isListedInSaved: Boolean(!isRemovedFromSaved && isDriveFolder),
     isArchived: folderId === ARCHIVED_FOLDER_ID,
     isMuted: getIsChatMuted(chat, notifyDefaults, notifyExceptions?.[chat.id]),
     isUnread: Boolean(unreadCount || unreadMentionsCount || hasUnreadMark),

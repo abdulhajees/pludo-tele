@@ -226,7 +226,7 @@ const ChatFolders: FC<OwnProps & StateProps> = ({
         isForumPanelOpen={isForumPanelOpen}
         foldersDispatch={foldersDispatch}
         isMainList
-        canDisplayArchive={(hasArchivedChats || hasArchivedStories) && !archiveSettings.isHidden}
+        canDisplayArchive={false}
         archiveSettings={archiveSettings}
         isFoldersSidebarShown={isFoldersSidebarShown}
         isStoryRibbonShown={isStoryRibbonShown}

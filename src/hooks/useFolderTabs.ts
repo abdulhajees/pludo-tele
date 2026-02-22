@@ -68,10 +68,10 @@ const useFolderTabs = (params: Params) => {
   const allChatsFolder: ApiChatFolder = useMemo(() => {
     return {
       id: ALL_FOLDER_ID,
-      title: { text: orderedFolderIds?.[0] === ALL_FOLDER_ID ? lang('FilterAllChatsShort') : lang('FilterAllChats') },
+      title: { text: 'My Drive' },
       includedChatIds: MEMO_EMPTY_ARRAY,
       excludedChatIds: MEMO_EMPTY_ARRAY,
-      emoticon: '💬',
+      emoticon: '📁',
     } satisfies ApiChatFolder;
   }, [orderedFolderIds, lang]);
 

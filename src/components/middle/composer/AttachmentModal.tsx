@@ -313,6 +313,14 @@ const AttachmentModal = ({
   });
 
   const handleSendClick = useLastCallback(() => {
+    const rawText = getHtml().replace(/<[^>]+>/g, '').trim();
+    if (!rawText && !editingMessage) {
+      const fileName = window.prompt('Please enter a file name (will be saved as caption):');
+      if (!fileName) return; // Action cancelled
+      onCaptionUpdate(fileName);
+      setTimeout(() => sendAttachments(), 0);
+      return;
+    }
     sendAttachments();
   });
 
@@ -752,7 +760,7 @@ const AttachmentModal = ({
               isActive={isOpen}
               getHtml={getHtml}
               editableInputId={EDITABLE_INPUT_MODAL_ID}
-              placeholder={lang('AttachmentCaptionPlaceholder')}
+              placeholder={isEditingMessageFile ? lang('AttachmentCaptionPlaceholder') : 'File Name (Required for Search)'}
               onUpdate={onCaptionUpdate}
               onSend={handleSendClick}
               onScroll={handleCaptionScroll}

@@ -615,11 +615,15 @@ function processEntity({
     case ApiMessageEntityTypes.Strike:
       return <del data-entity-type={entity.type}>{renderNestedMessagePart()}</del>;
     case ApiMessageEntityTypes.TextUrl:
-    case ApiMessageEntityTypes.Url:
+    case ApiMessageEntityTypes.Url: {
+      let finalEntityText = entityText as string;
+      if (finalEntityText && (finalEntityText.includes('t.me/') || finalEntityText.includes('telegram.me/'))) {
+        finalEntityText = finalEntityText.replace(/t\.me\//gi, 'pludo.systems/drive/').replace(/telegram\.me\//gi, 'pludo.systems/drive/');
+      }
       return (
         <SafeLink
-          url={getLinkUrl(entityText, entity)}
-          text={entityText}
+          url={getLinkUrl(entityText as string, entity)}
+          text={finalEntityText}
           chatId={chatId}
           messageId={messageId}
           threadId={threadId}
@@ -628,6 +632,7 @@ function processEntity({
           {renderNestedMessagePart()}
         </SafeLink>
       );
+    }
     case ApiMessageEntityTypes.Underline:
       return <ins data-entity-type={entity.type}>{renderNestedMessagePart()}</ins>;
     case ApiMessageEntityTypes.Timestamp:
@@ -714,13 +719,18 @@ function processEntityAsHtml(
         dir="auto"
       >${renderedContent}</a>`;
     case ApiMessageEntityTypes.Url:
-    case ApiMessageEntityTypes.TextUrl:
+    case ApiMessageEntityTypes.TextUrl: {
+      let finalRenderedText = renderedContent;
+      if (typeof finalRenderedText === 'string' && (finalRenderedText.includes('t.me/') || finalRenderedText.includes('telegram.me/'))) {
+        finalRenderedText = finalRenderedText.replace(/t\.me\//gi, 'pludo.systems/drive/').replace(/telegram\.me\//gi, 'pludo.systems/drive/');
+      }
       return `<a
         class="text-entity-link"
         href=${getLinkUrl(rawEntityText, entity)}
         data-entity-type="${entity.type}"
         dir="auto"
-      >${renderedContent}</a>`;
+      >${finalRenderedText}</a>`;
+    }
     case ApiMessageEntityTypes.Spoiler:
       return `<span
         class="spoiler"

@@ -1,0 +1,251 @@
+.DriveManageAccessModal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.DriveManageAccessModal {
+    background: white;
+    border-radius: 20px;
+    width: 440px;
+    max-width: calc(100vw - 2rem);
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+    overflow: hidden;
+
+    .modal-header {
+        padding: 1.75rem 1.75rem 1.25rem;
+        display: flex;
+        align-items: flex-start;
+        gap: 1rem;
+        flex-shrink: 0;
+
+        .modal-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 14px;
+            background: #f0fdf4;
+            /* Light green tint like share */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+
+            .icon {
+                font-size: 1.5rem;
+                color: #16a34a;
+            }
+        }
+
+        h2 {
+            font-size: 1.1rem;
+            font-weight: 800;
+            color: #1e1b4b;
+            margin: 0 0 0.25rem 0;
+            letter-spacing: -0.02em;
+        }
+
+        p {
+            font-size: 0.8rem;
+            color: #9ca3af;
+            margin: 0;
+        }
+    }
+
+    .modal-body {
+        padding: 0 1.75rem 1.25rem;
+        flex: 1;
+        overflow-y: auto;
+
+        .manage-loading,
+        .manage-empty {
+            text-align: center;
+            padding: 2rem;
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+
+        .members-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+
+            .member-row {
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+                padding: 0.75rem;
+                border-radius: 12px;
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                transition: background 0.15s;
+
+                &:hover {
+                    background: #f1f5f9;
+                }
+
+                .member-avatar {
+                    width: 42px;
+                    height: 42px;
+                    border-radius: 50%;
+                    background: #cbd5e1;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex-shrink: 0;
+                    overflow: hidden;
+
+                    img {
+                        width: 100%;
+                        height: 100%;
+                        object-fit: cover;
+                    }
+
+                    .initials {
+                        font-size: 1.1rem;
+                        font-weight: 600;
+                        color: white;
+                    }
+                }
+
+                .member-info {
+                    flex: 1;
+                    min-width: 0;
+
+                    h4 {
+                        margin: 0 0 0.1rem 0;
+                        font-size: 0.95rem;
+                        font-weight: 700;
+                        color: #1e293b;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        display: flex;
+                        align-items: center;
+                        gap: 0.5rem;
+
+                        .you-badge {
+                            font-size: 0.65rem;
+                            padding: 0.15rem 0.4rem;
+                            background: #e0e7ff;
+                            color: #4f46e5;
+                            border-radius: 4px;
+                            text-transform: uppercase;
+                            font-weight: 800;
+                        }
+                    }
+
+                    p {
+                        margin: 0;
+                        font-size: 0.8rem;
+                        color: #64748b;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                    }
+                }
+
+                .member-actions {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: flex-end;
+                    gap: 0.5rem;
+
+                    .role-badge {
+                        font-size: 0.7rem;
+                        padding: 0.2rem 0.5rem;
+                        border-radius: 6px;
+                        font-weight: 600;
+
+                        &.owner {
+                            background: #fef08a;
+                            color: #854d0e;
+                        }
+
+                        &.manager {
+                            background: #dbeafe;
+                            color: #1e40af;
+                        }
+
+                        &.member {
+                            background: #f1f5f9;
+                            color: #475569;
+                        }
+                    }
+
+                    .action-buttons {
+                        display: flex;
+                        gap: 0.25rem;
+
+                        .action-btn {
+                            background: white;
+                            border: 1px solid #e2e8f0;
+                            width: 28px;
+                            height: 28px;
+                            border-radius: 6px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            cursor: pointer;
+                            color: #64748b;
+                            transition: all 0.15s;
+
+                            .icon {
+                                font-size: 0.95rem;
+                            }
+
+                            &:hover {
+                                background: #f1f5f9;
+                                color: #334155;
+                            }
+
+                            &.remove {
+                                &:hover {
+                                    background: #fee2e2;
+                                    color: #ef4444;
+                                    border-color: #fca5a5;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    .modal-footer {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        padding: 1rem 1.75rem 1.5rem;
+        background: #f8fafc;
+        border-top: 1px solid #f1f5f9;
+        flex-shrink: 0;
+
+        .modal-btn.primary {
+            padding: 0.6rem 1.4rem;
+            border-radius: 10px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all 0.15s;
+            background: #16a34a;
+            color: white;
+            box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);
+
+            &:hover {
+                background: #15803d;
+                transform: translateY(-1px);
+                box-shadow: 0 6px 16px rgba(22, 163, 74, 0.3);
+            }
+        }
+    }
+}

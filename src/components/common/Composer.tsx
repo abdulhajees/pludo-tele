@@ -691,6 +691,33 @@ const Composer: FC<OwnProps & StateProps> = ({
     shouldSendInHighQuality: attachmentSettings.shouldSendInHighQuality,
   });
 
+  useEffect(() => {
+    if (!isInMessageList) return undefined;
+
+    const handleDriveUpload = async (e: Event) => {
+      const customEvent = e as CustomEvent<{ files: File[], forceAsFile?: boolean }>;
+      if (customEvent.detail && customEvent.detail.files && customEvent.detail.files.length > 0) {
+        if (customEvent.detail.forceAsFile) {
+          const newAttachments = await Promise.all(
+            customEvent.detail.files.map((file) => buildAttachment(file.name, file, { shouldSendInHighQuality: true }))
+          );
+
+          getActions().sendMessage({
+            messageList: currentMessageList,
+            text: '',
+            attachments: prepareAttachmentsToSend(newAttachments, false),
+            isSilent: isSilentPosting,
+          });
+        } else {
+          handleFileSelect(customEvent.detail.files);
+        }
+      }
+    };
+
+    window.addEventListener('ui-drive-upload', handleDriveUpload);
+    return () => window.removeEventListener('ui-drive-upload', handleDriveUpload);
+  }, [handleFileSelect, isInMessageList, chatId, threadId, currentMessageList, isSilentPosting]);
+
   const [isBotKeyboardOpen, openBotKeyboard, closeBotKeyboard] = useFlag();
   const [isBotCommandMenuOpen, openBotCommandMenu, closeBotCommandMenu] = useFlag();
   const [isSymbolMenuOpen, openSymbolMenu, closeSymbolMenu] = useFlag();

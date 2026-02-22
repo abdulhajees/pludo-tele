@@ -1,0 +1,91 @@
+.DriveView {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    background: #f8f7fe;
+    z-index: 10;
+    position: relative;
+
+    &.empty-bg {
+        background-color: var(--theme-background-color, #E8ECEF);
+        background-image: var(--custom-background);
+        background-size: var(--pattern-size, 400px);
+        background-repeat: repeat;
+        background-position: center;
+    }
+
+    .DriveView-body {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+    }
+
+    .DriveView-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 2rem 2.5rem;
+        min-width: 0;
+
+        .DriveView-page-header {
+            margin-bottom: 1.5rem;
+
+            h1 {
+                font-size: 1.75rem;
+                font-weight: 800;
+                color: #1e1b4b;
+                margin: 0 0 0.35rem 0;
+                letter-spacing: -0.02em;
+            }
+
+            p {
+                font-size: 0.9rem;
+                color: #6b7280;
+                margin: 0;
+            }
+        }
+
+        .DriveView-filters {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+
+            .filter-pill {
+                display: flex;
+                align-items: center;
+                padding: 0.35rem 0.875rem;
+                border-radius: 9999px;
+                font-size: 0.8125rem;
+                font-weight: 500;
+                border: 1px solid #e5e7eb;
+                background: white;
+                color: #6b7280;
+                cursor: pointer;
+                transition: all 0.15s;
+
+                &:hover {
+                    border-color: #c4b5fd;
+                    color: #7c3aed;
+                }
+
+                &.active {
+                    background: #8B5CF6;
+                    border-color: #8B5CF6;
+                    color: white;
+                }
+            }
+        }
+    }
+
+    .hidden-composer {
+        display: none !important;
+    }
+}
+
+#LeftColumn.drive-sidebar-collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}

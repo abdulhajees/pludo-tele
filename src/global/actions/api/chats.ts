@@ -1702,18 +1702,18 @@ addActionHandler('openChatByUsername', async (global, actions, payload): Promise
     if (!isWebApp) {
       await openChatByUsername(
         global, actions, {
-          username,
-          threadId,
-          channelPostId: messageId,
-          startParam,
-          ref,
-          startAttach,
-          attach,
-          text,
-          timestamp,
-          linkContext,
-          isDirect,
-        }, tabId,
+        username,
+        threadId,
+        channelPostId: messageId,
+        startParam,
+        ref,
+        startAttach,
+        attach,
+        text,
+        timestamp,
+        linkContext,
+        isDirect,
+      }, tabId,
       );
       if (onChatChanged) {
         // @ts-ignore
@@ -3622,3 +3622,79 @@ export async function ensureIsSuperGroup<T extends GlobalState>(
 
   return newChat;
 }
+
+addActionHandler('syncDriveChatFolders', async (global: any, actions: any): Promise<void> => {
+  const currentUserId = global.currentUserId;
+  if (!currentUserId) return;
+
+  const allChats = Object.values(global.chats.byId || {}) as any[];
+
+  const privateFilesIds: string[] = [];
+  const sharedFilesIds: string[] = [];
+  const connectionsIds: string[] = [];
+
+  allChats.forEach((chat: any) => {
+    if (!chat || chat.isNotJoined || chat.isRestricted || !chat.title) return;
+
+    if (chat.title.startsWith('pludo-drive-share_')) {
+      const parts = chat.title.split('_');
+      if (parts.length >= 3) {
+        const sender = parts[1];
+        const receiver = parts[2];
+        const currentUser = global.users.byId[currentUserId] as any;
+
+        if (currentUser && (
+          (currentUser.usernames as any[])?.some(u => u.username === sender) ||
+          (currentUser.usernames as any[])?.some(u => u.username === receiver)
+        )) {
+          connectionsIds.push(chat.id);
+        }
+      }
+      sharedFilesIds.push(chat.id);
+    } else if (chat.title.startsWith('pludo-drive_')) {
+      privateFilesIds.push(chat.id);
+    }
+  });
+
+  const { byId, orderedIds } = global.chatFolders || { byId: {}, orderedIds: [] };
+  const existingFolders = Object.values(byId) as any[];
+
+  const targetFolders = [
+    { title: 'pludo_private_files', ids: privateFilesIds },
+    { title: 'pludo_shared_files', ids: sharedFilesIds },
+    { title: 'pludo_connections', ids: connectionsIds },
+  ];
+
+  let nextNewId = Math.max(...(orderedIds || []), 1) + 1;
+
+  for (const target of targetFolders) {
+    if (target.ids.length === 0) continue; // Don't create empty folders 
+
+    let folder = existingFolders.find((f: any) => f.title === target.title);
+
+    if (folder) {
+      const currentIdsStr = [...(folder.includedChatIds || [])].sort().join(',');
+      const targetIdsStr = [...target.ids].sort().join(',');
+      if (currentIdsStr !== targetIdsStr) {
+        actions.editChatFolder({
+          id: folder.id,
+          folderUpdate: {
+            ...folder,
+            includedChatIds: target.ids,
+          }
+        });
+      }
+    } else {
+      actions.addChatFolder({
+        folder: {
+          title: target.title,
+          includedChatIds: target.ids,
+          excludedChatIds: [],
+          pinnedChatIds: [],
+          emoticon: '',
+        } as any
+      });
+      nextNewId++;
+    }
+  }
+});

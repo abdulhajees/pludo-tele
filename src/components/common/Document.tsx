@@ -84,7 +84,10 @@ const Document = ({
   const [isFileIpDialogOpen, openFileIpDialog, closeFileIpDialog] = useFlag();
   const [shouldNotWarnAboutFiles, setShouldNotWarnAboutFiles] = useState(false);
 
-  const { fileName, size, mimeType } = document;
+  const { size, mimeType } = document;
+  const customFileName = message?.content?.text?.text?.trim();
+  const rawFileName = document.fileName || 'file';
+  const fileName = customFileName || rawFileName;
   const extension = getDocumentExtension(document) || '';
 
   const isIntersecting = useIsIntersecting(ref, observeIntersection);

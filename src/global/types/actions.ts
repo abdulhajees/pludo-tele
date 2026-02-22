@@ -365,6 +365,7 @@ export interface ActionPayloads {
     idsToRemove: number[];
     idsToAdd: number[];
   } & WithTabId;
+  syncDriveChatFolders: undefined;
   toggleIsProtected: {
     chatId: string;
     isProtected: boolean;
@@ -1208,6 +1209,9 @@ export interface ActionPayloads {
     shouldReplaceHistory?: boolean;
     shouldReplaceLast?: boolean;
     noForumTopicPanel?: boolean;
+  } & WithTabId;
+  setDriveActiveSection: {
+    section?: 'my_files' | 'sharing' | 'recent' | 'notifications';
   } & WithTabId;
   openThread: {
     type?: MessageListType;
