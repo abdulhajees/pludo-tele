@@ -393,6 +393,14 @@
                                 background: #fef2f2;
                             }
                         }
+
+                        &.favorite-active {
+                            color: #dc2626;
+
+                            .icon {
+                                color: #dc2626;
+                            }
+                        }
                     }
                 }
             }

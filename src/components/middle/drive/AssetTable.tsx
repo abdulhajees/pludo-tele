@@ -7,6 +7,7 @@ import { GENERAL_TOPIC_ID } from '../../../config';
 import { getMessageContent } from '../../../global/helpers';
 import { getMessageMediaHash } from '../../../global/helpers/messageMedia';
 import { formatMediaDateTime } from '../../../util/dates/dateFormat';
+import { buildDriveFavoriteMessage } from '../../../util/driveFavorites';
 import { getMessageKey } from '../../../util/keys/messageKey';
 import type { ActiveDownloads } from '../../../types';
 import useOldLang from '../../../hooks/useOldLang';
@@ -20,6 +21,7 @@ import DriveShareFileModal from './DriveShareFileModal';
 import './AssetTable.scss';
 
 const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif'];
+const VIDEO_EXTS = ['mp4', 'mov', 'avi', 'webm', 'mkv', 'm4v'];
 
 type OwnProps = {
     files: {
@@ -40,6 +42,7 @@ type OwnProps = {
     chatFullInfoById?: Record<string, ApiChatFullInfo>;
     uploadProgressByMessageKey?: Record<string, { progress: number }>;
     activeDownloads?: ActiveDownloads;
+    favoriteKeys?: Record<string, true>;
 };
 
 const formatSize = (bytes: number) => {
@@ -50,8 +53,9 @@ const formatSize = (bytes: number) => {
     return (bytes / 1073741824).toFixed(1) + ' GB';
 };
 
-const getPreviewMode = (ext: string, isPhoto: boolean): 'image' | 'none' => {
+const getPreviewMode = (ext: string, isPhoto: boolean, isVideo: boolean): 'image' | 'video' | 'none' => {
     if (isPhoto) return 'image';
+    if (isVideo || VIDEO_EXTS.includes(ext)) return 'video';
     if (IMAGE_EXTS.includes(ext)) return 'image';
     return 'none';
 };
@@ -73,6 +77,7 @@ const AssetTableRow: FC<{
     chatFullInfoById?: Record<string, ApiChatFullInfo>;
     uploadProgressByMessageKey?: Record<string, { progress: number }>;
     activeDownloads?: ActiveDownloads;
+    favoriteKeys?: Record<string, true>;
 }> = memo(({
     id,
     sourceChatId,
@@ -90,6 +95,7 @@ const AssetTableRow: FC<{
     chatFullInfoById,
     uploadProgressByMessageKey,
     activeDownloads,
+    favoriteKeys,
 }) => {
     const oldLang = useOldLang();
     const lang = useLang();
@@ -113,12 +119,14 @@ const AssetTableRow: FC<{
 
     const isPending = file.sendingState === 'messageSendingStatePending';
     const isFailed = file.sendingState === 'messageSendingStateFailed';
-    const previewMode = getPreviewMode(ext, Boolean(photo));
+    const previewMode = getPreviewMode(ext, Boolean(photo), Boolean(video));
     const canManage = Boolean(isAdmin || (currentUserId && file.senderId === currentUserId));
     const messageKey = getMessageKey(file);
     const uploadProgress = uploadProgressByMessageKey?.[messageKey]?.progress;
     const downloadMediaHash = getMessageMediaHash(file, {}, 'download');
     const isDownloading = Boolean(downloadMediaHash && activeDownloads?.[downloadMediaHash]);
+    const favoriteKey = `${sourceChatId}:${file.id}`;
+    const isFavorite = Boolean(favoriteKeys?.[favoriteKey]);
 
     const sourceChat = sourceChatId && chatsById
         ? chatsById[sourceChatId]
@@ -187,7 +195,7 @@ const AssetTableRow: FC<{
     const handlePreview = (e: React.MouseEvent) => {
         e.stopPropagation();
         setMenuOpen(false);
-        if (previewMode === 'image') {
+        if (previewMode === 'image' || previewMode === 'video') {
             getActions().openMediaViewer({
                 chatId: sourceChatId,
                 threadId: typeof threadId === 'number' && sourceChatId === chatId ? threadId : undefined,
@@ -204,7 +212,7 @@ const AssetTableRow: FC<{
             onFileSelect({ id, sourceChatId, file });
             return;
         }
-        if (previewMode === 'image') {
+        if (previewMode === 'image' || previewMode === 'video') {
             handlePreview(e);
         }
     };
@@ -235,6 +243,24 @@ const AssetTableRow: FC<{
                 threadId: typeof threadId === 'number' && sourceChatId === chatId ? threadId : GENERAL_TOPIC_ID,
                 type: 'thread',
             },
+        });
+    };
+
+    const handleFavorite = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setMenuOpen(false);
+
+        if (!currentUser || isFavorite) return;
+
+        getActions().sendMessage({
+            chat: currentUser as unknown as ApiChat,
+            text: buildDriveFavoriteMessage({
+                version: 1,
+                sourceChatId,
+                messageId: file.id,
+                fileName,
+                addedAt: Date.now(),
+            }),
         });
     };
 
@@ -352,9 +378,9 @@ const AssetTableRow: FC<{
                 </button>
                 {menuOpen && (
                     <div className="row-action-menu">
-                        {previewMode === 'image' && (
+                        {(previewMode === 'image' || previewMode === 'video') && (
                             <button className="menu-item" onClick={handlePreview}>
-                                <i className="icon icon-eye-open" /> {lang('DriveMenuPreview')}
+                                <i className="icon icon-eye-open" /> {previewMode === 'video' ? lang('DrivePreviewViewVideo') : lang('DriveMenuPreview')}
                             </button>
                         )}
                         <button className="menu-item" onClick={handleDownload}>
@@ -363,7 +389,10 @@ const AssetTableRow: FC<{
                         <button className="menu-item" onClick={(e) => { e.stopPropagation(); setMenuOpen(false); setShareModalOpen(true); }}>
                             <i className="icon icon-share" /> {lang('DriveMenuShare')}
                         </button>
-                        {canManage && previewMode === 'image' && (
+                        <button className={`menu-item ${isFavorite ? 'favorite-active' : ''}`} onClick={handleFavorite} disabled={isFavorite || !currentUser}>
+                            <i className={`icon ${isFavorite ? 'icon-heart' : 'icon-heart-outline'}`} /> {isFavorite ? lang('DriveMenuFavorited') : lang('DriveMenuFavorite')}
+                        </button>
+                        {canManage && (previewMode === 'image' || previewMode === 'video') && (
                             <>
                                 <button className="menu-item" onClick={handleRenameStart}>
                                     <i className="icon icon-edit" /> {lang('DriveActionRename')}
@@ -438,6 +467,7 @@ const AssetTable: FC<OwnProps> = ({
     chatFullInfoById,
     uploadProgressByMessageKey,
     activeDownloads,
+    favoriteKeys,
 }) => {
     const lang = useLang();
 
@@ -478,6 +508,7 @@ const AssetTable: FC<OwnProps> = ({
                             chatFullInfoById={chatFullInfoById}
                             uploadProgressByMessageKey={uploadProgressByMessageKey}
                             activeDownloads={activeDownloads}
+                            favoriteKeys={favoriteKeys}
                         />
                     ))}
                     {files.length === 0 && (

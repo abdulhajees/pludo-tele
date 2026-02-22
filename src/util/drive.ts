@@ -14,8 +14,8 @@ type DriveMetadata = {
   receiverUsername?: string;
 };
 
-export type DriveSection = 'my_files' | 'sharing' | 'recent' | 'notifications';
-export type DriveSectionUi = 'my-files' | 'sharing' | 'recent' | 'notifications';
+export type DriveSection = 'my_files' | 'sharing' | 'recent' | 'favorites' | 'notifications';
+export type DriveSectionUi = 'my-files' | 'sharing' | 'recent' | 'favorites' | 'notifications';
 
 function parseDriveMetadata(about?: string): DriveMetadata | undefined {
   if (!about) return undefined;

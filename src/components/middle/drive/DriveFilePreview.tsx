@@ -16,8 +16,9 @@ import DriveShareFileModal from './DriveShareFileModal';
 import './DriveFilePreview.scss';
 
 const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif'];
+const VIDEO_EXTS = ['mp4', 'mov', 'avi', 'webm', 'mkv', 'm4v'];
 
-type PreviewMode = 'image' | 'none';
+type PreviewMode = 'image' | 'video' | 'none';
 
 type OwnProps = {
     file: ApiMessage;
@@ -60,6 +61,7 @@ const DriveFilePreview: FC<OwnProps> = ({
 
     const previewMode: PreviewMode = (() => {
         if (photo || IMAGE_EXTS.includes(ext)) return 'image';
+        if (video || VIDEO_EXTS.includes(ext)) return 'video';
         return 'none';
     })();
 
@@ -138,7 +140,9 @@ const DriveFilePreview: FC<OwnProps> = ({
 
     const canManage = Boolean(isAdmin || (currentUserId && file.senderId === currentUserId));
 
-    const previewLabel = photo ? lang('DrivePreviewViewImage') : lang('DriveMenuPreview');
+    const previewLabel = previewMode === 'video'
+        ? lang('DrivePreviewViewVideo')
+        : photo ? lang('DrivePreviewViewImage') : lang('DriveMenuPreview');
 
     return (
         <div className="DriveFilePreview">
@@ -221,7 +225,7 @@ const DriveFilePreview: FC<OwnProps> = ({
             </div>
 
             <div className="DriveFilePreview-actions">
-                {previewMode === 'image' && (
+                {(previewMode === 'image' || previewMode === 'video') && (
                     <button
                         className="preview-action-btn primary"
                         onClick={handleTelegramPreview}

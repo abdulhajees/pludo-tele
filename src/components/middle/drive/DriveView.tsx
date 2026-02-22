@@ -8,6 +8,7 @@ import type { ActiveDownloads } from '../../../types';
 import { getMessageContent } from '../../../global/helpers';
 import { getDocumentExtension } from '../../common/helpers/documentInfo';
 import { openSystemFilesDialog } from '../../../util/systemFilesDialog';
+import { parseDriveFavoriteMessage } from '../../../util/driveFavorites';
 import { isDriveFolderTitle, isDriveShareTitle, normalizeDriveSectionUi } from '../../../util/drive';
 import type { DriveSection, DriveSectionUi } from '../../../util/drive';
 
@@ -32,13 +33,16 @@ type OwnProps = {
 
 type StateProps = {
     messagesByChatId?: Record<string, Record<number, ApiMessage> | undefined>;
+    savedMessagesById?: Record<number, ApiMessage>;
     inviteLink?: string;
     driveFoldersIds?: string[];
+    driveFoldersById?: Record<string, ApiChat>;
     isCurrentChatAdmin?: boolean;
     activeDownloads?: ActiveDownloads;
 };
 
-type FilterType = 'all' | 'doc' | 'image' | 'pdf' | 'video';
+type FilterType = 'all' | 'doc' | 'image' | 'pdf' | 'video' | 'audio' | 'archive' | 'sheet' | 'code';
+type TimeFilterType = 'all' | '24h' | '7d' | '30d';
 
 type DriveFileItem = {
     id: string;
@@ -51,11 +55,13 @@ const DriveView: FC<OwnProps & StateProps> = ({
     threadId,
     isMobile,
     messagesByChatId,
+    savedMessagesById,
     inviteLink,
     section = 'my-files',
     currentUserId,
     driveActiveSection,
     driveFoldersIds,
+    driveFoldersById,
     isCurrentChatAdmin,
     activeDownloads,
 }) => {
@@ -65,6 +71,8 @@ const DriveView: FC<OwnProps & StateProps> = ({
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [selectedFile, setSelectedFile] = useState<DriveFileItem | undefined>(undefined);
     const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+    const [activeTimeFilter, setActiveTimeFilter] = useState<TimeFilterType>('all');
+    const [shouldSearchSpaces, setShouldSearchSpaces] = useState(false);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
 
     const isAdmin = Boolean(isCurrentChatAdmin);
@@ -77,6 +85,10 @@ const DriveView: FC<OwnProps & StateProps> = ({
             });
         }
     }, [driveFoldersIds?.join(',')]);
+
+    useEffect(() => {
+        setSelectedFile(undefined);
+    }, [chatId, driveActiveSection]);
 
     const handleUploadClick = () => {
         openSystemFilesDialog('*', (e: Event) => {
@@ -169,11 +181,21 @@ const DriveView: FC<OwnProps & StateProps> = ({
         }
 
         if (targetSection === 'recent') {
-            return allFiles.slice(0, 50);
+            return allFiles.slice(0, 10);
+        }
+
+        if (targetSection === 'favorites') {
+            const favoriteMeta = Object.values(savedMessagesById || {})
+                .map((message) => parseDriveFavoriteMessage(message.content.text?.text))
+                .filter(Boolean) as ReturnType<typeof parseDriveFavoriteMessage>[];
+
+            const favoriteKeys = new Set(favoriteMeta.map((entry) => `${entry!.sourceChatId}:${entry!.messageId}`));
+
+            return allFiles.filter(({ sourceChatId, file }) => favoriteKeys.has(`${sourceChatId}:${file.id}`));
         }
 
         return allFiles;
-    }, [allFiles, section, driveActiveSection, currentUserId]);
+    }, [allFiles, section, driveActiveSection, currentUserId, savedMessagesById]);
 
     const files = useMemo(() => {
         let result = sectionFiles;
@@ -186,22 +208,44 @@ const DriveView: FC<OwnProps & StateProps> = ({
                 if (activeFilter === 'pdf') return ext === 'pdf';
                 if (activeFilter === 'doc') return ['doc', 'docx', 'txt', 'ppt', 'pptx'].includes(ext || '');
                 if (activeFilter === 'video') return ['mp4', 'mov', 'avi', 'mkv'].includes(ext || '');
+                if (activeFilter === 'audio') return ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'].includes(ext || '');
+                if (activeFilter === 'archive') return ['zip', 'rar', '7z', 'tar', 'gz'].includes(ext || '');
+                if (activeFilter === 'sheet') return ['xls', 'xlsx', 'csv', 'ods'].includes(ext || '');
+                if (activeFilter === 'code') return ['json', 'xml', 'yaml', 'yml', 'ts', 'tsx', 'js', 'jsx', 'css', 'scss', 'html', 'md'].includes(ext || '');
                 return true;
             });
         }
 
+        if (activeTimeFilter !== 'all') {
+            const now = Date.now();
+            const threshold = activeTimeFilter === '24h'
+                ? now - 24 * 60 * 60 * 1000
+                : activeTimeFilter === '7d'
+                    ? now - 7 * 24 * 60 * 60 * 1000
+                    : now - 30 * 24 * 60 * 60 * 1000;
+
+            result = result.filter(({ file }) => (file.date * 1000) >= threshold);
+        }
+
         if (searchQuery.trim().length > 0) {
             const lowerQuery = searchQuery.toLowerCase();
-            result = result.filter(({ file }) => {
+            result = result.filter(({ file, sourceChatId }) => {
                 const { document } = getMessageContent(file);
                 const customFileName = file.content.text?.text?.trim();
                 const rawFileName = document?.fileName || 'file';
-                return (customFileName || rawFileName).toLowerCase().includes(lowerQuery);
+                const nameMatched = (customFileName || rawFileName).toLowerCase().includes(lowerQuery);
+                if (nameMatched) return true;
+
+                if (!shouldSearchSpaces) return false;
+
+                const folder = driveFoldersById?.[sourceChatId];
+                const folderName = folder?.title?.toLowerCase() || '';
+                return folderName.includes(lowerQuery);
             });
         }
 
         return result;
-    }, [sectionFiles, activeFilter, searchQuery]);
+    }, [sectionFiles, activeFilter, activeTimeFilter, searchQuery, shouldSearchSpaces, driveFoldersById]);
 
     const filters: { id: FilterType; label: string }[] = [
         { id: 'all', label: lang('DriveFilterAll') },
@@ -209,7 +253,35 @@ const DriveView: FC<OwnProps & StateProps> = ({
         { id: 'image', label: lang('DriveFilterImages') },
         { id: 'pdf', label: lang('DriveFilterPdfs') },
         { id: 'video', label: lang('DriveFilterVideos') },
+        { id: 'audio', label: lang('DriveFilterAudio') },
+        { id: 'archive', label: lang('DriveFilterArchives') },
+        { id: 'sheet', label: lang('DriveFilterSheets') },
+        { id: 'code', label: lang('DriveFilterCode') },
     ];
+
+    const timeFilters: { id: TimeFilterType; label: string }[] = [
+        { id: 'all', label: lang('DriveFilterTimeAll') },
+        { id: '24h', label: lang('DriveFilterTime24h') },
+        { id: '7d', label: lang('DriveFilterTime7d') },
+        { id: '30d', label: lang('DriveFilterTime30d') },
+    ];
+
+    const favoriteMeta = useMemo(() => {
+        return Object.values(savedMessagesById || {})
+            .map((message) => parseDriveFavoriteMessage(message.content.text?.text))
+            .filter(Boolean) as ReturnType<typeof parseDriveFavoriteMessage>[];
+    }, [savedMessagesById]);
+
+    const favoriteKeys = useMemo(() => {
+        const map: Record<string, true> = {};
+
+        favoriteMeta.forEach((entry) => {
+            if (!entry) return;
+            map[`${entry.sourceChatId}:${entry.messageId}`] = true;
+        });
+
+        return map;
+    }, [favoriteMeta]);
 
     if (!chatId && !driveActiveSection) {
         return (
@@ -225,6 +297,8 @@ const DriveView: FC<OwnProps & StateProps> = ({
             ? lang('DriveTitleSharedWithMe')
             : driveSection === 'recent'
                 ? lang('Recent')
+                : driveSection === 'favorites'
+                    ? lang('DriveTitleFavorites')
                 : lang('DriveTitleYourDrive');
 
     const driveSubtitle = chatId
@@ -233,6 +307,8 @@ const DriveView: FC<OwnProps & StateProps> = ({
             ? lang('DriveSubtitleSharedWithMe')
             : driveSection === 'recent'
                 ? lang('DriveSubtitleRecent')
+                : driveSection === 'favorites'
+                    ? lang('DriveSubtitleFavorites')
                 : lang('DriveSubtitleYourDrive');
 
     const selectedThreadId = selectedFile?.sourceChatId === chatId ? threadId : undefined;
@@ -286,6 +362,24 @@ const DriveView: FC<OwnProps & StateProps> = ({
                             ))}
                         </div>
 
+                        <div className="DriveView-filters secondary">
+                            {timeFilters.map((f) => (
+                                <button
+                                    key={f.id}
+                                    className={`filter-pill ${activeTimeFilter === f.id ? 'active' : ''}`}
+                                    onClick={() => setActiveTimeFilter(f.id)}
+                                >
+                                    {f.label}
+                                </button>
+                            ))}
+                            <button
+                                className={`filter-pill ${shouldSearchSpaces ? 'active' : ''}`}
+                                onClick={() => setShouldSearchSpaces((prev) => !prev)}
+                            >
+                                {lang('DriveFilterSearchSpaces')}
+                            </button>
+                        </div>
+
                         <AssetTable
                             files={files}
                             chatId={chatId}
@@ -293,6 +387,7 @@ const DriveView: FC<OwnProps & StateProps> = ({
                             onFileSelect={setSelectedFile}
                             isAdmin={isAdmin}
                             tableMode={driveSection === 'sharing' ? 'sharing' : 'space'}
+                            favoriteKeys={favoriteKeys}
                         />
                     </div>
                 )}
@@ -334,6 +429,7 @@ const DriveView: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
     (global, { chatId, driveActiveSection }): StateProps => {
         let messagesByChatId: Record<string, Record<number, ApiMessage> | undefined> | undefined;
+        let savedMessagesById: Record<number, ApiMessage> | undefined;
         let inviteLink: string | undefined;
         let driveFoldersIds: string[] | undefined;
         const fullInfoById = global.chats.fullInfoById || {};
@@ -359,18 +455,25 @@ export default memo(withGlobal<OwnProps>(
                     && !chat.isRestricted
             ) as ApiChat[];
 
-            const sourceChats = driveActiveSection === 'sharing' ? shareFolders : driveFolders;
+            const sourceChats = driveActiveSection === 'sharing'
+                ? shareFolders
+                : (driveActiveSection === 'recent' || driveActiveSection === 'favorites')
+                    ? [...driveFolders, ...shareFolders]
+                    : driveFolders;
 
             sourceChats.forEach((folder) => {
                 messagesByChatId![folder.id] = selectChatMessages(global, folder.id);
             });
             driveFoldersIds = sourceChats.map((f) => f.id);
+            savedMessagesById = global.currentUserId ? selectChatMessages(global, global.currentUserId) : undefined;
         }
 
         return {
             messagesByChatId,
+            savedMessagesById,
             inviteLink,
             driveFoldersIds,
+            driveFoldersById: global.chats.byId,
             isCurrentChatAdmin: chatId ? Boolean(global.chats.byId[chatId]?.isCreator || Object.values(global.chats.byId[chatId]?.adminRights || {}).some(Boolean)) : false,
             activeDownloads: selectTabState(global).activeDownloads,
         };

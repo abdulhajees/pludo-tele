@@ -1211,7 +1211,7 @@ export interface ActionPayloads {
     noForumTopicPanel?: boolean;
   } & WithTabId;
   setDriveActiveSection: {
-    section?: 'my_files' | 'sharing' | 'recent' | 'notifications';
+    section?: 'my_files' | 'sharing' | 'recent' | 'favorites' | 'notifications';
   } & WithTabId;
   openThread: {
     type?: MessageListType;
