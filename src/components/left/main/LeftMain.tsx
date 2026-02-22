@@ -10,7 +10,7 @@ import DriveSidebar from './DriveSidebar';
 
 import './LeftMain.scss';
 
-type Section = 'my-files' | 'sharing' | 'deleted';
+type Section = 'my-files' | 'sharing' | 'recent' | 'notifications';
 
 type OwnProps = {
   content: LeftColumnContent;

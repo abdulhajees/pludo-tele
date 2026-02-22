@@ -5,6 +5,7 @@ import {
 import { getActions } from '../../global';
 
 import buildClassName from '../../util/buildClassName';
+import { buildDriveFolderTitle, buildDriveSpaceAbout } from '../../util/drive';
 
 import useOldLang from '../../hooks/useOldLang';
 
@@ -41,8 +42,8 @@ const NewChatButton: FC<OwnProps> = ({
     const folderName = window.prompt(lang('EnterFolderName') || 'Enter a name for the new folder:');
     if (folderName && folderName.trim().length > 0) {
       createChannel({
-        title: `pludo-drive_${folderName.trim()}`,
-        about: '',
+        title: buildDriveFolderTitle(folderName.trim()),
+        about: buildDriveSpaceAbout(),
         memberIds: [],
         isChannel: true,
       });

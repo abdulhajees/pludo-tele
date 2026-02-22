@@ -10,6 +10,31 @@
     justify-content: center;
 }
 
+.recent-usernames-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.recent-username-chip {
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    color: #475569;
+    border-radius: 9999px;
+    padding: 0.35rem 0.65rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+        color: #8B5CF6;
+        border-color: #8B5CF6;
+        background: rgba(139, 92, 246, 0.1);
+    }
+}
+
 .DriveShareSpaceModal {
     background: #ffffff;
     border-radius: 24px;

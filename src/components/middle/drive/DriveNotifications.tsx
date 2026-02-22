@@ -1,14 +1,20 @@
 import type { FC } from '../../../lib/teact/teact';
 import { memo, useMemo, useState } from '../../../lib/teact/teact';
 import { withGlobal } from '../../../global';
-import type { ApiMessage, ApiChat } from '../../../api/types';
+import type { ApiMessage, ApiChat, ApiChatFullInfo } from '../../../api/types';
 import { isChatBasicGroup, isChatSuperGroup, isChatChannel } from '../../../global/helpers';
+import { isDriveShareTitle } from '../../../util/drive';
+import { formatMediaDateTime } from '../../../util/dates/dateFormat';
+
+import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import './DriveNotifications.scss';
 
 type StateProps = {
     allMessagesByChatId?: Record<string, Record<number, ApiMessage>>;
     allChatsById?: Record<string, ApiChat>;
+    chatFullInfoById?: Record<string, ApiChatFullInfo>;
     currentUserId?: string;
 };
 
@@ -27,8 +33,11 @@ type NotificationItem = {
 const DriveNotifications: FC<StateProps> = ({
     allMessagesByChatId,
     allChatsById,
+    chatFullInfoById,
     currentUserId
 }) => {
+    const lang = useLang();
+    const oldLang = useOldLang();
     const [activeTab, setActiveTab] = useState<'all' | 'files' | 'invites'>('all');
 
     const notifications = useMemo(() => {
@@ -41,7 +50,7 @@ const DriveNotifications: FC<StateProps> = ({
             if (!chat) return;
 
             const isDM = !isChatBasicGroup(chat) && !isChatSuperGroup(chat) && !isChatChannel(chat);
-            const isShareChannel = chat.title?.toLowerCase().startsWith('pludo-drive-share_');
+            const isShareChannel = isDriveShareTitle(chat.title, chatFullInfoById?.[chatId]?.about);
 
             const chatMessages = Object.values(allMessagesByChatId[chatId]);
 
@@ -49,18 +58,29 @@ const DriveNotifications: FC<StateProps> = ({
                 if (!msg || msg.senderId === currentUserId) return; // skip own messages
 
                 // Check for Invite Links in DMs
-                if (isDM && msg.content?.text?.text.includes('pludo.systems/drive/')) {
+                if (isDM && msg.content?.text?.text.includes('/drive/')) {
                     const textContent = msg.content.text.text;
-                    const regex = /(https?:\/\/(?:www\.)?pludo\.systems\/drive\/\+?[^\s]+)/gi;
+                    const regex = /(https?:\/\/[^\s]+)/gi;
                     const matches = textContent.match(regex);
                     if (matches && matches.length > 0) {
+                        const inviteLink = matches.find((link) => {
+                            try {
+                                const parsed = new URL(link);
+                                return parsed.pathname.includes('/drive/');
+                            } catch (err) {
+                                return false;
+                            }
+                        });
+
+                        if (!inviteLink) return;
+
                         items.push({
                             id: `${chatId}_${msg.id}`,
                             type: 'invite',
                             timestamp: msg.date,
                             senderId: msg.senderId || chatId,
                             text: textContent,
-                            inviteLink: matches[0],
+                            inviteLink,
                             message: msg,
                             chat
                         });
@@ -83,7 +103,7 @@ const DriveNotifications: FC<StateProps> = ({
 
         // Filter out items without valid senderId for 'file' type if necessary, or sort by date
         return items.sort((a, b) => b.timestamp - a.timestamp);
-    }, [allMessagesByChatId, allChatsById, currentUserId]);
+    }, [allMessagesByChatId, allChatsById, chatFullInfoById, currentUserId]);
 
     const filteredNotifications = useMemo(() => {
         if (activeTab === 'all') return notifications;
@@ -91,22 +111,22 @@ const DriveNotifications: FC<StateProps> = ({
     }, [notifications, activeTab]);
 
     const emptyStateTitle = activeTab === 'all'
-        ? 'No Notifications'
+        ? lang('DriveNotifEmptyAllTitle')
         : activeTab === 'files'
-            ? 'No Recent Files'
-            : 'No Pending Invites';
+            ? lang('DriveNotifEmptyFilesTitle')
+            : lang('DriveNotifEmptyInvitesTitle');
 
     const emptyStateText = activeTab === 'all'
-        ? "You're all caught up! Pending invites and shared files will appear here."
+        ? lang('DriveNotifEmptyAllText')
         : activeTab === 'files'
-            ? "Files directly shared with you will appear here."
-            : "Any Space invite links sent to you will appear here.";
+            ? lang('DriveNotifEmptyFilesText')
+            : lang('DriveNotifEmptyInvitesText');
 
     return (
         <div className="DriveNotifications custom-scroll">
             <div className="DriveNotifications-header">
-                <h1>Notifications</h1>
-                <p>Stay updated with invites and files shared with you.</p>
+                <h1>{lang('Notifications')}</h1>
+                <p>{lang('DriveNotificationsSubtitle')}</p>
             </div>
 
             <div className="DriveView-filters">
@@ -114,19 +134,19 @@ const DriveNotifications: FC<StateProps> = ({
                     className={`filter-pill ${activeTab === 'all' ? 'active' : ''}`}
                     onClick={() => setActiveTab('all')}
                 >
-                    All
+                    {lang('DriveFilterAll')}
                 </button>
                 <button
                     className={`filter-pill ${activeTab === 'files' ? 'active' : ''}`}
                     onClick={() => setActiveTab('files')}
                 >
-                    Files
+                    {lang('DriveTableFilesTitle')}
                 </button>
                 <button
                     className={`filter-pill ${activeTab === 'invites' ? 'active' : ''}`}
                     onClick={() => setActiveTab('invites')}
                 >
-                    Invites
+                    {lang('DriveNavInvites')}
                 </button>
             </div>
 
@@ -144,17 +164,17 @@ const DriveNotifications: FC<StateProps> = ({
                                 <i className={`icon ${notif.type === 'file' ? 'icon-document' : 'icon-link'}`} />
                             </div>
                             <div className="notification-content">
-                                <h4>{notif.type === 'file' ? 'New file shared with you' : 'New Drive Space Invite'}</h4>
+                                <h4>{notif.type === 'file' ? lang('DriveNotifCardFileTitle') : lang('DriveNotifCardInviteTitle')}</h4>
                                 <p className="notification-detail">
-                                    {notif.type === 'invite' ? notif.text : 'A file was uploaded to your direct sharing channel.'}
+                                    {notif.type === 'invite' ? notif.text : lang('DriveNotifCardFileText')}
                                 </p>
                                 <span className="notification-time">
-                                    {new Date(notif.timestamp * 1000).toLocaleString()}
+                                    {formatMediaDateTime(oldLang, notif.timestamp * 1000)}
                                 </span>
                             </div>
                             {notif.type === 'invite' && notif.inviteLink && (
                                 <a className="btn-primary small" href={notif.inviteLink} target="_blank" rel="noopener noreferrer">
-                                    Open Link
+                                    {lang('Open')}
                                 </a>
                             )}
                         </div>
@@ -170,6 +190,7 @@ export default memo(withGlobal<{}>(
         return {
             allMessagesByChatId: global.messages.byChatId,
             allChatsById: global.chats.byId,
+            chatFullInfoById: global.chats.fullInfoById,
             currentUserId: global.currentUserId,
         };
     }

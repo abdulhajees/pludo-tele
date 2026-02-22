@@ -1,29 +1,45 @@
 import type { FC } from '@teact';
-import { memo, useState } from '@teact';
+import { memo, useRef, useState } from '@teact';
 import { getActions, withGlobal } from '../../../global';
-import { selectUser, selectChat } from '../../../global/selectors';
-import type { ApiChat, ApiMessage, ApiUser } from '../../../api/types';
+import { selectTabState, selectUser } from '../../../global/selectors';
+import type { ApiChat, ApiChatFullInfo, ApiMessage, ApiUser } from '../../../api/types';
+import { GENERAL_TOPIC_ID } from '../../../config';
 import { getMessageContent } from '../../../global/helpers';
+import { getMessageMediaHash } from '../../../global/helpers/messageMedia';
 import { formatMediaDateTime } from '../../../util/dates/dateFormat';
+import { getMessageKey } from '../../../util/keys/messageKey';
+import type { ActiveDownloads } from '../../../types';
 import useOldLang from '../../../hooks/useOldLang';
+import useLang from '../../../hooks/useLang';
 import ProfilePhoto from '../../common/profile/ProfilePhoto';
+import { getDriveDisplayName, getDriveShareParticipants } from '../../../util/drive';
+import { useClickOutside } from '../../../hooks/events/useOutsideClick';
 
 import DriveShareFileModal from './DriveShareFileModal';
 
 import './AssetTable.scss';
 
-const BROWSER_VIEWABLE_EXTS = ['pdf', 'txt', 'svg', 'mp3', 'wav', 'ogg', 'webm'];
-const TELEGRAM_VIEWER_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov'];
-const NO_PREVIEW_EXTS = ['zip', 'rar', '7z', 'tar', 'gz', 'exe', 'dmg', 'pkg', 'deb', 'apk', 'iso'];
+const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif'];
 
 type OwnProps = {
-    files: ApiMessage[];
-    chatId: string;
+    files: {
+        id: string;
+        sourceChatId: string;
+        file: ApiMessage;
+    }[];
+    chatId?: string;
     threadId?: number | string;
-    onFileSelect?: (file: ApiMessage) => void;
+    onFileSelect?: (file: { id: string; sourceChatId: string; file: ApiMessage }) => void;
     isAdmin?: boolean;
+    tableMode?: 'sharing' | 'space';
     chatsById?: Record<string, ApiChat>;
+    usersById?: Record<string, ApiUser | undefined>;
     currentUserId?: string;
+    usersByUsername?: Record<string, ApiUser>;
+    currentUser?: ApiUser;
+    chatFullInfoById?: Record<string, ApiChatFullInfo>;
+    uploadProgressByMessageKey?: Record<string, { progress: number }>;
+    activeDownloads?: ActiveDownloads;
 };
 
 const formatSize = (bytes: number) => {
@@ -34,69 +50,136 @@ const formatSize = (bytes: number) => {
     return (bytes / 1073741824).toFixed(1) + ' GB';
 };
 
-const getPreviewMode = (ext: string, isPhoto: boolean, isVideo: boolean): 'telegram' | 'browser' | 'none' => {
-    if (isPhoto) return 'telegram';
-    if (TELEGRAM_VIEWER_EXTS.includes(ext)) return 'telegram';
-    if (BROWSER_VIEWABLE_EXTS.includes(ext)) return 'browser';
-    if (NO_PREVIEW_EXTS.includes(ext)) return 'none';
-    return 'browser';
+const getPreviewMode = (ext: string, isPhoto: boolean): 'image' | 'none' => {
+    if (isPhoto) return 'image';
+    if (IMAGE_EXTS.includes(ext)) return 'image';
+    return 'none';
 };
 
 const AssetTableRow: FC<{
+    id: string;
+    sourceChatId: string;
     file: ApiMessage;
-    chatId: string;
+    chatId?: string;
     threadId?: number | string;
-    onFileSelect?: (file: ApiMessage) => void;
+    onFileSelect?: (file: { id: string; sourceChatId: string; file: ApiMessage }) => void;
     isAdmin?: boolean;
+    tableMode?: 'sharing' | 'space';
     chatsById?: Record<string, ApiChat>;
+    usersById?: Record<string, ApiUser | undefined>;
     currentUserId?: string;
-}> = memo(({ file, chatId, threadId, onFileSelect, isAdmin = false, chatsById, currentUserId }) => {
+    usersByUsername?: Record<string, ApiUser>;
+    currentUser?: ApiUser;
+    chatFullInfoById?: Record<string, ApiChatFullInfo>;
+    uploadProgressByMessageKey?: Record<string, { progress: number }>;
+    activeDownloads?: ActiveDownloads;
+}> = memo(({
+    id,
+    sourceChatId,
+    file,
+    chatId,
+    threadId,
+    onFileSelect,
+    isAdmin = false,
+    tableMode = 'space',
+    chatsById,
+    usersById,
+    currentUserId,
+    usersByUsername,
+    currentUser,
+    chatFullInfoById,
+    uploadProgressByMessageKey,
+    activeDownloads,
+}) => {
     const oldLang = useOldLang();
+    const lang = useLang();
     const [menuOpen, setMenuOpen] = useState(false);
     const [renaming, setRenaming] = useState(false);
     const [renameValue, setRenameValue] = useState('');
     const [shareModalOpen, setShareModalOpen] = useState(false);
+    const rowMenuRef = useRef<HTMLDivElement>();
+
+    useClickOutside([rowMenuRef], () => {
+        if (!menuOpen) return;
+        setMenuOpen(false);
+    });
 
     const { document, photo, video } = getMessageContent(file);
     const customFileName = file.content.text?.text?.trim();
-    const rawFileName = document?.fileName || (photo ? 'Photo' : video ? 'Video' : 'file');
+    const rawFileName = document?.fileName || (photo ? lang('DrivePreviewPhoto') : video ? lang('DrivePreviewVideo') : lang('DrivePreviewUntitled'));
     const fileName = customFileName || rawFileName;
     const size = document?.size || (video && 'size' in video ? (video as any).size : 0) || 0;
     const ext = document?.fileName?.split('.').pop()?.toLowerCase() || '';
 
     const isPending = file.sendingState === 'messageSendingStatePending';
     const isFailed = file.sendingState === 'messageSendingStateFailed';
-    const previewMode = getPreviewMode(ext, Boolean(photo), Boolean(video));
+    const previewMode = getPreviewMode(ext, Boolean(photo));
     const canManage = Boolean(isAdmin || (currentUserId && file.senderId === currentUserId));
+    const messageKey = getMessageKey(file);
+    const uploadProgress = uploadProgressByMessageKey?.[messageKey]?.progress;
+    const downloadMediaHash = getMessageMediaHash(file, {}, 'download');
+    const isDownloading = Boolean(downloadMediaHash && activeDownloads?.[downloadMediaHash]);
 
-    const sourceChat = (file as any).chatId && chatsById
-        ? chatsById[(file as any).chatId]
+    const sourceChat = sourceChatId && chatsById
+        ? chatsById[sourceChatId]
         : undefined;
 
-    const locationLabel = sourceChat?.title
-        ? sourceChat.title.replace(/^pludo-drive_/i, '').replace(/^pludo-drive/i, 'Drive')
-        : 'My Drive';
+    const sourceChatTitle = sourceChat?.title;
+    const participants = getDriveShareParticipants(sourceChatTitle, chatFullInfoById?.[sourceChatId]?.about);
+    const currentUsername = currentUser?.usernames?.[0]?.username?.toLowerCase();
+    const isReceiver = Boolean(participants && currentUsername && participants.receiverUsername === currentUsername);
+    const isSender = Boolean(participants && currentUsername && participants.senderUsername === currentUsername);
 
-    const isSharedWithMe = file.senderId && file.senderId !== currentUserId;
+    const sharedByUsername = participants
+        ? (isReceiver ? participants.senderUsername : (isSender ? participants.senderUsername : participants.senderUsername))
+        : undefined;
+    const sharedWithUsername = participants
+        ? (isReceiver ? participants.receiverUsername : (isSender ? participants.receiverUsername : participants.receiverUsername))
+        : undefined;
+
+    const sharedByUser = sharedByUsername ? usersByUsername?.[sharedByUsername] : undefined;
+    const sharedWithUser = sharedWithUsername ? usersByUsername?.[sharedWithUsername] : undefined;
+    const modifiedByUser = file.senderId ? usersById?.[file.senderId] : undefined;
+    const isModifiedByMe = Boolean(!file.senderId || file.senderId === currentUserId);
+
+    const sharedByName = participants
+        ? (isSender
+            ? lang('DriveTableSenderMe')
+            : sharedByUser?.firstName || sharedByUser?.usernames?.[0]?.username || sharedByUsername || lang('DriveTableSenderUnknown'))
+        : undefined;
+
+    const sharedWithName = participants
+        ? (isReceiver
+            ? lang('DriveTableSenderMe')
+            : sharedWithUser?.firstName || sharedWithUser?.usernames?.[0]?.username || sharedWithUsername || lang('DriveTableSenderUnknown'))
+        : undefined;
+
+    const fallbackLocationLabel = sourceChatTitle
+        ? getDriveDisplayName(sourceChatTitle)
+        : lang('DriveTableMyDrive');
 
     const getFileIcon = () => {
         if (photo) return 'icon-photo';
         if (ext === 'pdf') return 'icon-document';
-        if (['doc', 'docx'].includes(ext)) return 'icon-document';
+        if (['doc', 'docx', 'txt', 'md'].includes(ext)) return 'icon-document';
         if (['ppt', 'pptx'].includes(ext)) return 'icon-document';
         if (['mp4', 'mov', 'avi', 'webm'].includes(ext)) return 'icon-video';
-        if (['mp3', 'wav', 'ogg'].includes(ext)) return 'icon-audio';
+        if (['mp3', 'wav', 'ogg', 'm4a'].includes(ext)) return 'icon-note';
         if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'icon-archive';
-        return 'icon-document';
+        if (['csv', 'xls', 'xlsx'].includes(ext)) return 'icon-file-badge';
+        if (['xml', 'json', 'yaml', 'yml'].includes(ext)) return 'icon-file-badge';
+        return 'icon-file-badge';
     };
 
     const getIconColor = () => {
-        if (photo || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return '#10b981';
+        if (photo || IMAGE_EXTS.includes(ext)) return '#10b981';
         if (ext === 'pdf') return '#ef4444';
         if (['doc', 'docx'].includes(ext)) return '#3b82f6';
+        if (['csv', 'xls', 'xlsx'].includes(ext)) return '#0f766e';
+        if (['xml', 'json', 'yaml', 'yml'].includes(ext)) return '#334155';
         if (['ppt', 'pptx'].includes(ext)) return '#f97316';
         if (['mp4', 'mov', 'webm'].includes(ext)) return '#8b5cf6';
-        if (['mp3', 'wav'].includes(ext)) return '#ec4899';
+        if (['mp3', 'wav', 'ogg', 'm4a'].includes(ext)) return '#ec4899';
         if (['zip', 'rar', '7z'].includes(ext)) return '#f59e0b';
         return '#6b7280';
     };
@@ -104,27 +187,26 @@ const AssetTableRow: FC<{
     const handlePreview = (e: React.MouseEvent) => {
         e.stopPropagation();
         setMenuOpen(false);
-        if (previewMode === 'telegram') {
+        if (previewMode === 'image') {
             getActions().openMediaViewer({
-                chatId,
-                threadId: threadId as number,
+                chatId: sourceChatId,
+                threadId: typeof threadId === 'number' && sourceChatId === chatId ? threadId : undefined,
                 messageId: file.id,
                 origin: 'inline' as any,
             });
-        } else if (previewMode === 'browser' && document) {
-            getActions().downloadMedia({ media: document, originMessage: file });
         }
     };
 
     const handleRowClick = (e: React.MouseEvent) => {
         if (menuOpen || renaming) return;
         if (isPending) return;
-        if (previewMode === 'none') return;
         if (onFileSelect) {
-            onFileSelect(file);
+            onFileSelect({ id, sourceChatId, file });
             return;
         }
-        handlePreview(e);
+        if (previewMode === 'image') {
+            handlePreview(e);
+        }
     };
 
     const handleDownload = (e: React.MouseEvent) => {
@@ -134,8 +216,8 @@ const AssetTableRow: FC<{
             getActions().downloadMedia({ media: document, originMessage: file });
         } else {
             getActions().openMediaViewer({
-                chatId,
-                threadId: threadId as number,
+                chatId: sourceChatId,
+                threadId: typeof threadId === 'number' && sourceChatId === chatId ? threadId : undefined,
                 messageId: file.id,
                 origin: 'inline' as any,
             });
@@ -145,7 +227,15 @@ const AssetTableRow: FC<{
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation();
         setMenuOpen(false);
-        getActions().deleteMessages({ messageIds: [file.id], shouldDeleteForAll: true });
+        getActions().deleteMessages({
+            messageIds: [file.id],
+            shouldDeleteForAll: true,
+            messageList: {
+                chatId: sourceChatId,
+                threadId: typeof threadId === 'number' && sourceChatId === chatId ? threadId : GENERAL_TOPIC_ID,
+                type: 'thread',
+            },
+        });
     };
 
     const handleRenameStart = (e: React.MouseEvent) => {
@@ -159,7 +249,11 @@ const AssetTableRow: FC<{
         if (renameValue.trim() && renameValue.trim() !== fileName) {
             getActions().setEditingId({ messageId: file.id });
             getActions().editMessage({
-                messageList: { chatId, threadId: threadId as number, type: 'thread' },
+                messageList: {
+                    chatId: sourceChatId,
+                    threadId: typeof threadId === 'number' && sourceChatId === chatId ? threadId : GENERAL_TOPIC_ID,
+                    type: 'thread',
+                },
                 text: renameValue.trim(),
             });
         }
@@ -177,8 +271,9 @@ const AssetTableRow: FC<{
             onClick={handleRowClick}
         >
             <div className="AssetTable-col name-col">
-                <div className="file-type-icon" style={{ background: `${getIconColor()}18` } as React.CSSProperties}>
-                    <i className={`icon ${getFileIcon()}`} style={{ color: getIconColor() } as React.CSSProperties} />
+                <div className="file-type-icon" style={`background: ${getIconColor()}18`}>
+                    <i className={`icon ${getFileIcon()}`} style={`color: ${getIconColor()}`} />
+                    {ext && <span className="file-ext-badge">{ext.slice(0, 4).toUpperCase()}</span>}
                 </div>
                 {renaming ? (
                     <input
@@ -192,10 +287,18 @@ const AssetTableRow: FC<{
                     />
                 ) : (
                     <div className="file-name-block">
-                        <span className="file-name">{fileName}</span>
-                        {isPending && <span className="file-badge uploading">Uploading</span>}
-                        {isFailed && <span className="file-badge failed">Failed</span>}
-                        {previewMode === 'none' && !isPending && <span className="file-badge no-preview">No Preview</span>}
+                        <div className="file-name-main">
+                            <span className="file-name">{fileName}</span>
+                            {isFailed && <span className="file-badge failed">{lang('DriveTableBadgeFailed')}</span>}
+                        </div>
+                        {(uploadProgress !== undefined || isDownloading) && (
+                            <div className="transfer-progress">
+                                <div
+                                    className={`transfer-progress-fill ${isDownloading && uploadProgress === undefined ? 'indeterminate' : ''}`}
+                                    style={uploadProgress !== undefined ? `width: ${Math.max(0, Math.min(100, Math.round(uploadProgress * 100)))}%` : undefined}
+                                />
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -205,53 +308,68 @@ const AssetTableRow: FC<{
             </div>
 
             <div className="AssetTable-col sharedBy-col">
-                <SenderInfo userId={file.senderId} currentUserId={currentUserId} />
+                {tableMode === 'sharing' ? (
+                    <ParticipantInfo
+                        user={sharedByUser}
+                        isMe={Boolean(isSender)}
+                        fallbackName={sharedByName || lang('DriveTableSenderUnknown')}
+                    />
+                ) : (
+                    <ParticipantInfo
+                        user={modifiedByUser}
+                        isMe={isModifiedByMe}
+                        fallbackName={lang('DriveTableSenderUnknown')}
+                    />
+                )}
             </div>
 
-            <div className="AssetTable-col location-col">
-                <div className="location-badge">
-                    <i className={`icon ${isSharedWithMe ? 'icon-user' : 'icon-folder'}`} />
-                    <span>{isSharedWithMe ? 'Shared with me' : locationLabel}</span>
-                </div>
+            <div className="AssetTable-col sharedWith-col">
+                {tableMode === 'sharing' && participants ? (
+                    <ParticipantInfo
+                        user={sharedWithUser}
+                        isMe={Boolean(isReceiver)}
+                        fallbackName={sharedWithName || lang('DriveTableSenderUnknown')}
+                    />
+                ) : (
+                    <div className="location-badge">
+                        <i className="icon icon-folder" />
+                        <span>{fallbackLocationLabel}</span>
+                    </div>
+                )}
             </div>
 
             <div className="AssetTable-col created-col">
-                {isPending ? 'Just now' : formatMediaDateTime(oldLang, file.date * 1000)}
+                {isPending ? lang('DriveTableJustNow') : formatMediaDateTime(oldLang, file.date * 1000)}
             </div>
 
-            <div className="AssetTable-col actions-col" onClick={(e) => e.stopPropagation()}>
+            <div className="AssetTable-col actions-col" onClick={(e) => e.stopPropagation()} ref={rowMenuRef}>
                 <button
                     className="row-action-btn"
                     onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
-                    title="More options"
+                    title={lang('AccDescrMoreOptions')}
                 >
                     <i className="icon icon-more" />
                 </button>
                 {menuOpen && (
                     <div className="row-action-menu">
-                        {previewMode === 'telegram' && (
+                        {previewMode === 'image' && (
                             <button className="menu-item" onClick={handlePreview}>
-                                <i className="icon icon-eye-open" /> Preview
-                            </button>
-                        )}
-                        {previewMode === 'browser' && (
-                            <button className="menu-item" onClick={handlePreview}>
-                                <i className="icon icon-web" /> Open in Browser
+                                <i className="icon icon-eye-open" /> {lang('DriveMenuPreview')}
                             </button>
                         )}
                         <button className="menu-item" onClick={handleDownload}>
-                            <i className="icon icon-download" /> Download
+                            <i className="icon icon-download" /> {lang('DriveMenuDownload')}
                         </button>
                         <button className="menu-item" onClick={(e) => { e.stopPropagation(); setMenuOpen(false); setShareModalOpen(true); }}>
-                            <i className="icon icon-share" /> Share
+                            <i className="icon icon-share" /> {lang('DriveMenuShare')}
                         </button>
-                        {canManage && (
+                        {canManage && previewMode === 'image' && (
                             <>
                                 <button className="menu-item" onClick={handleRenameStart}>
-                                    <i className="icon icon-edit" /> Rename
+                                    <i className="icon icon-edit" /> {lang('DriveActionRename')}
                                 </button>
                                 <button className="menu-item danger" onClick={handleDelete}>
-                                    <i className="icon icon-delete" /> Delete
+                                    <i className="icon icon-delete" /> {lang('DeleteChat')}
                                 </button>
                             </>
                         )}
@@ -262,78 +380,110 @@ const AssetTableRow: FC<{
             <DriveShareFileModal
                 isOpen={shareModalOpen}
                 file={file}
-                sourceChatId={chatId}
+                sourceChatId={sourceChatId}
                 onClose={() => setShareModalOpen(false)}
             />
         </div>
     );
 });
 
-const SenderInfo = memo(withGlobal<{ userId?: string; currentUserId?: string }>(
-    (global, { userId, currentUserId }) => {
-        const isSelf = !userId || userId === currentUserId || userId === global.currentUserId;
-        const user = userId && !isSelf ? selectUser(global, userId) : undefined;
-        let name = 'Unknown';
-        if (isSelf) {
-            name = 'Me';
-        } else if (user) {
-            name = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.usernames?.[0]?.username || 'User';
-        }
-        return { user, isSelf, name };
-    }
-)(({ user, isSelf, name }: { user?: ApiUser; isSelf?: boolean; name: string }) => (
-    <div className="AssetTable-sender">
-        {(user && !isSelf) ? (
-            <ProfilePhoto
-                user={user}
-                theme="light"
-                canPlayVideo={false}
-                onClick={() => { }}
-            />
-        ) : (
-            <div className="placeholder-avatar">
-                {name.charAt(0).toUpperCase()}
-            </div>
-        )}
-        <span>{name}</span>
-    </div>
-)));
+const ParticipantInfo = ({
+    user,
+    isMe,
+    fallbackName,
+}: {
+    user?: ApiUser;
+    isMe?: boolean;
+    fallbackName: string;
+}) => {
+    const lang = useLang();
 
-const AssetTable: FC<OwnProps> = ({ files, chatId, threadId, onFileSelect, isAdmin = false, chatsById, currentUserId }) => {
+    const name = isMe
+        ? lang('DriveTableSenderMe')
+        : user
+            ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.usernames?.[0]?.username || lang('DriveTableSenderUser')
+            : fallbackName;
+
+    return (
+        <div className="AssetTable-sender">
+            {(user && !isMe) ? (
+                <ProfilePhoto
+                    user={user}
+                    theme="light"
+                    canPlayVideo={false}
+                    onClick={() => { }}
+                />
+            ) : (
+                <div className="placeholder-avatar">
+                    {name.charAt(0).toUpperCase()}
+                </div>
+            )}
+            <span>{name}</span>
+        </div>
+    );
+};
+
+const AssetTable: FC<OwnProps> = ({
+    files,
+    chatId,
+    threadId,
+    onFileSelect,
+    isAdmin = false,
+    tableMode = 'space',
+    chatsById,
+    usersById,
+    currentUserId,
+    usersByUsername,
+    currentUser,
+    chatFullInfoById,
+    uploadProgressByMessageKey,
+    activeDownloads,
+}) => {
+    const lang = useLang();
+
     return (
         <div className="AssetTable">
             <div className="AssetTable-header-row">
-                <h2 className="section-title">Files</h2>
-                <span className="asset-count">{files.length} item{files.length !== 1 ? 's' : ''}</span>
+                <h2 className="section-title">{lang('DriveTableFilesTitle')}</h2>
+                <span className="asset-count">{files.length === 1 ? lang('DriveTableCountOne', { count: files.length }) : lang('DriveTableCountOther', { count: files.length })}</span>
             </div>
 
             <div className="AssetTable-container">
                 <div className="AssetTable-header">
-                    <div className="AssetTable-col name-col">Name</div>
-                    <div className="AssetTable-col size-col">Size</div>
-                    <div className="AssetTable-col sharedBy-col">Shared by</div>
-                    <div className="AssetTable-col location-col">Location</div>
-                    <div className="AssetTable-col created-col">Date</div>
+                    <div className="AssetTable-col name-col">{lang('DriveTableColName')}</div>
+                    <div className="AssetTable-col size-col">{lang('DriveTableColSize')}</div>
+                    <div className="AssetTable-col sharedBy-col">{tableMode === 'sharing' ? lang('DriveTableColSharedBy') : lang('DriveTableColModifiedBy')}</div>
+                    <div className="AssetTable-col sharedWith-col">{tableMode === 'sharing' ? lang('DriveTableColSharedWith') : lang('DriveTableColLocation')}</div>
+                    <div className="AssetTable-col created-col">{lang('DriveTableColDate')}</div>
                     <div className="AssetTable-col actions-col" />
                 </div>
 
                 <div className="AssetTable-body">
-                    {files.map((file) => (
+                    {files.map((item) => (
                         <AssetTableRow
-                            key={file.id}
-                            file={file}
+                            key={item.id}
+                            id={item.id}
+                            sourceChatId={item.sourceChatId}
+                            file={item.file}
                             chatId={chatId}
                             threadId={threadId}
                             onFileSelect={onFileSelect}
                             isAdmin={isAdmin}
+                            tableMode={tableMode}
                             chatsById={chatsById}
+                            usersById={usersById}
                             currentUserId={currentUserId}
+                            usersByUsername={usersByUsername}
+                            currentUser={currentUser}
+                            chatFullInfoById={chatFullInfoById}
+                            uploadProgressByMessageKey={uploadProgressByMessageKey}
+                            activeDownloads={activeDownloads}
                         />
                     ))}
                     {files.length === 0 && (
                         <div className="AssetTable-empty">
                             <i className="icon icon-document" />
-                            <p>No files yet. Upload your first file.</p>
+                            <p>{lang('DriveTableEmpty')}</p>
                         </div>
                     )}
                 </div>
@@ -343,8 +493,28 @@ const AssetTable: FC<OwnProps> = ({ files, chatId, threadId, onFileSelect, isAdm
 };
 
 export default memo(withGlobal<OwnProps>(
-    (global) => ({
-        chatsById: global.chats.byId as Record<string, ApiChat>,
-        currentUserId: global.currentUserId,
-    })
+    (global) => {
+        const usersByUsername: Record<string, ApiUser> = {};
+
+        Object.values(global.users.byId || {}).forEach((user) => {
+            if (!user?.usernames?.length) return;
+            user.usernames.forEach((usernameItem) => {
+                if (!usernameItem?.username) return;
+                usersByUsername[usernameItem.username.toLowerCase()] = user;
+            });
+        });
+
+        const currentUser = global.currentUserId ? selectUser(global, global.currentUserId) : undefined;
+
+        return {
+            chatsById: global.chats.byId as Record<string, ApiChat>,
+            chatFullInfoById: global.chats.fullInfoById,
+            usersById: global.users.byId,
+            currentUserId: global.currentUserId,
+            usersByUsername,
+            currentUser,
+            uploadProgressByMessageKey: global.fileUploads.byMessageKey,
+            activeDownloads: selectTabState(global).activeDownloads,
+        };
+    }
 )(AssetTable));

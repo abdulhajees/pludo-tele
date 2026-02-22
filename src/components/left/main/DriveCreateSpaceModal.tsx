@@ -3,6 +3,9 @@ import { memo, useState } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 import { ChatCreationProgress } from '../../../types';
 import { selectTabState } from '../../../global/selectors';
+import { buildDriveFolderTitle, buildDriveSpaceAbout } from '../../../util/drive';
+
+import useLang from '../../../hooks/useLang';
 
 import './DriveCreateSpaceModal.scss';
 
@@ -16,6 +19,8 @@ type StateProps = {
 };
 
 const DriveCreateSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, onClose, creationProgress }) => {
+    const lang = useLang();
+
     const [spaceName, setSpaceName] = useState('');
     const [error, setError] = useState('');
 
@@ -33,13 +38,13 @@ const DriveCreateSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, onClose, cre
     const handleCreate = () => {
         const name = spaceName.trim();
         if (!name) {
-            setError('Space name cannot be empty');
+            setError(lang('DriveCreateErrorNameEmpty'));
             return;
         }
         setError('');
         getActions().createChannel({
-            title: `pludo-drive_${name}`,
-            about: '',
+            title: buildDriveFolderTitle(name),
+            about: buildDriveSpaceAbout(),
             memberIds: [],
             isChannel: true,
         });
@@ -62,18 +67,18 @@ const DriveCreateSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, onClose, cre
                         <i className="icon icon-folder" />
                     </div>
                     <div>
-                        <h2>Create New Space</h2>
-                        <p>A private space to store and organize your files</p>
+                        <h2>{lang('DriveCreateTitle')}</h2>
+                        <p>{lang('DriveCreateSubtitle')}</p>
                     </div>
                 </div>
 
                 <div className="modal-body">
-                    <label className="input-label">Space name</label>
+                    <label className="input-label">{lang('DriveCreateSpaceName')}</label>
                     <div className="input-row">
                         <span className="input-prefix">pludo-drive_</span>
                         <input
                             className={`space-name-input ${error ? 'has-error' : ''}`}
-                            placeholder="my-space"
+                            placeholder={lang('DriveCreatePlaceholder')}
                             value={spaceName}
                             onChange={(e) => {
                                 setSpaceName(e.target.value.replace(/\s+/g, '-'));
@@ -87,13 +92,13 @@ const DriveCreateSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, onClose, cre
                 </div>
 
                 <div className="modal-footer">
-                    <button className="modal-btn cancel" onClick={onClose}>Cancel</button>
+                    <button className="modal-btn cancel" onClick={onClose}>{lang('Cancel')}</button>
                     <button
                         className={`modal-btn create ${isLoading ? 'loading' : ''}`}
                         onClick={handleCreate}
                         disabled={isLoading}
                     >
-                        {isLoading ? 'Creating...' : 'Create Space'}
+                        {isLoading ? lang('DriveCreateLoading') : lang('DriveCreateAction')}
                     </button>
                 </div>
             </div>

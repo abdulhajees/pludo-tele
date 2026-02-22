@@ -43,6 +43,7 @@ import { IS_MAC_OS } from '../../util/browser/windowEnvironment';
 import captureEscKeyListener from '../../util/captureEscKeyListener';
 import { disableDirectTextInput, enableDirectTextInput } from '../../util/directInputManager';
 import { isUserId } from '../../util/entities/ids';
+import { isDriveFolderTitle, isDriveShareTitle } from '../../util/drive';
 import { MEDIA_VIEWER_MEDIA_QUERY } from '../common/helpers/mediaDimensions';
 import { renderMessageText } from '../common/helpers/renderMessageText';
 import { getMediaViewerItem, type MediaViewerItem, type ViewableMedia } from './helpers/getViewableMedia';
@@ -68,6 +69,7 @@ import Transition from '../ui/Transition';
 import MediaViewerActions from './MediaViewerActions';
 import MediaViewerSlides from './MediaViewerSlides';
 import SenderInfo from './SenderInfo';
+import DriveShareFileModal from '../middle/drive/DriveShareFileModal';
 
 import './MediaViewer.scss';
 
@@ -95,6 +97,7 @@ type StateProps = {
   isSynced?: boolean;
   currentItem?: MediaViewerItem;
   viewableMedia?: ViewableMedia;
+  isDriveMessage?: boolean;
 };
 
 const ANIMATION_DURATION = 250;
@@ -124,6 +127,7 @@ const MediaViewer = ({
   isSynced,
   currentItem,
   viewableMedia,
+  isDriveMessage,
 }: StateProps) => {
   const {
     openMediaViewer,
@@ -151,6 +155,7 @@ const MediaViewer = ({
 
   /* Controls */
   const [isReportAvatarModalOpen, openReportAvatarModal, closeReportAvatarModal] = useFlag();
+  const [isDriveShareModalOpen, openDriveShareModal, closeDriveShareModal] = useFlag();
 
   const {
     isVideo,
@@ -274,6 +279,11 @@ const MediaViewer = ({
   });
 
   const handleForward = useLastCallback(() => {
+    if (isDriveMessage && message && chatId) {
+      openDriveShareModal();
+      return;
+    }
+
     openForwardMenu({
       fromChatId: chatId!,
       messageIds: [messageId!],
@@ -461,6 +471,12 @@ const MediaViewer = ({
           photo={avatar}
           peerId={avatarOwner?.id}
         />
+        <DriveShareFileModal
+          isOpen={isDriveShareModalOpen}
+          file={message}
+          sourceChatId={chatId}
+          onClose={closeDriveShareModal}
+        />
       </div>
       <MediaViewerSlides
         item={currentItem}
@@ -559,6 +575,13 @@ export default memo(withGlobal(
       }
     }
 
+    const currentChat = chatId ? global.chats.byId[chatId] : undefined;
+    const currentChatAbout = chatId ? global.chats.fullInfoById[chatId]?.about : undefined;
+    const isDriveMessage = Boolean(currentChat && (
+      isDriveFolderTitle(currentChat.title, currentChatAbout)
+      || isDriveShareTitle(currentChat.title, currentChatAbout)
+    ));
+
     let sponsoredMessage: ApiSponsoredMessage | undefined;
     if (isSponsoredMessage && chatId) {
       if (origin === MediaViewerOrigin.SponsoredMessage) {
@@ -628,6 +651,7 @@ export default memo(withGlobal(
       avatar: undefined,
       avatarOwner: undefined,
       profilePhotos: undefined,
+      isDriveMessage,
     };
   },
 )(MediaViewer));

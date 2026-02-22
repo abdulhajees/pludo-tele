@@ -2,25 +2,31 @@ import type { FC } from '@teact';
 import { memo, useState } from '@teact';
 import type { ApiMessage } from '../../../api/types';
 import { getMessageContent } from '../../../global/helpers';
+import { getMessageMediaHash } from '../../../global/helpers/messageMedia';
 import { formatMediaDateTime } from '../../../util/dates/dateFormat';
 import { MediaViewerOrigin } from '../../../types';
 import { getActions } from '../../../global';
+import { GENERAL_TOPIC_ID } from '../../../config';
 import useOldLang from '../../../hooks/useOldLang';
+import useLang from '../../../hooks/useLang';
+import type { ActiveDownloads } from '../../../types';
+
+import DriveShareFileModal from './DriveShareFileModal';
 
 import './DriveFilePreview.scss';
 
-const TELEGRAM_VIEWABLE = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov'];
-const NO_PREVIEW_EXTS = ['zip', 'rar', '7z', 'tar', 'gz', 'exe', 'dmg', 'pkg', 'deb', 'apk', 'iso', 'bin'];
+const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif'];
 
-type PreviewMode = 'telegram' | 'browser' | 'none';
+type PreviewMode = 'image' | 'none';
 
 type OwnProps = {
     file: ApiMessage;
-    chatId: string;
+    sourceChatId: string;
     threadId?: number | string;
     onClose: () => void;
     isAdmin?: boolean;
     currentUserId?: string;
+    activeDownloads?: ActiveDownloads;
 };
 
 const formatSize = (bytes: number) => {
@@ -31,21 +37,29 @@ const formatSize = (bytes: number) => {
     return (bytes / 1073741824).toFixed(1) + ' GB';
 };
 
-const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdmin = false, currentUserId }) => {
+const DriveFilePreview: FC<OwnProps> = ({
+    file,
+    sourceChatId,
+    threadId,
+    onClose,
+    isAdmin = false,
+    currentUserId,
+    activeDownloads,
+}) => {
     const oldLang = useOldLang();
+    const lang = useLang();
 
     const { document, photo, video } = getMessageContent(file);
     const customFileName = file.content.text?.text?.trim();
-    const rawFileName = document?.fileName || (photo ? 'Photo' : video ? 'Video' : 'Untitled');
+    const rawFileName = document?.fileName || (photo ? lang('DrivePreviewPhoto') : video ? lang('DrivePreviewVideo') : lang('DrivePreviewUntitled'));
     const fileName = customFileName || rawFileName;
     const size = document?.size || (video && 'size' in video ? (video as any).size : 0) || 0;
     const ext = document?.fileName?.split('.').pop()?.toLowerCase() || '';
+    const downloadMediaHash = getMessageMediaHash(file, {}, 'download');
+    const isDownloading = Boolean(downloadMediaHash && activeDownloads?.[downloadMediaHash]);
 
     const previewMode: PreviewMode = (() => {
-        if (photo) return 'telegram';
-        if (video || TELEGRAM_VIEWABLE.includes(ext)) return 'telegram';
-        if (NO_PREVIEW_EXTS.includes(ext)) return 'none';
-        if (document) return 'browser';
+        if (photo || IMAGE_EXTS.includes(ext)) return 'image';
         return 'none';
     })();
 
@@ -70,8 +84,8 @@ const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdm
 
     const handleTelegramPreview = () => {
         getActions().openMediaViewer({
-            chatId,
-            threadId: threadId as number,
+            chatId: sourceChatId,
+            threadId: typeof threadId === 'number' ? threadId : undefined,
             messageId: file.id,
             origin: MediaViewerOrigin.Inline,
         });
@@ -82,8 +96,8 @@ const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdm
             getActions().downloadMedia({ media: document, originMessage: file });
         } else if (photo || video) {
             getActions().openMediaViewer({
-                chatId,
-                threadId: threadId as number,
+                chatId: sourceChatId,
+                threadId: typeof threadId === 'number' ? threadId : undefined,
                 messageId: file.id,
                 origin: MediaViewerOrigin.Inline,
             });
@@ -91,18 +105,31 @@ const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdm
     };
 
     const handleDelete = () => {
-        getActions().deleteMessages({ messageIds: [file.id], shouldDeleteForAll: true });
+        getActions().deleteMessages({
+            messageIds: [file.id],
+            shouldDeleteForAll: true,
+            messageList: {
+                chatId: sourceChatId,
+                threadId: typeof threadId === 'number' ? threadId : GENERAL_TOPIC_ID,
+                type: 'thread',
+            },
+        });
         onClose();
     };
 
     const [isEditingTag, setIsEditingTag] = useState(false);
     const [tagValue, setTagValue] = useState(customFileName || '');
+    const [shareModalOpen, setShareModalOpen] = useState(false);
 
     const handleSaveTag = () => {
         if (tagValue.trim() !== customFileName) {
             getActions().setEditingId({ messageId: file.id });
             getActions().editMessage({
-                messageList: { chatId, threadId: threadId as number, type: 'thread' },
+                messageList: {
+                    chatId: sourceChatId,
+                    threadId: typeof threadId === 'number' ? threadId : GENERAL_TOPIC_ID,
+                    type: 'thread',
+                },
                 text: tagValue.trim(),
             });
         }
@@ -111,18 +138,12 @@ const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdm
 
     const canManage = Boolean(isAdmin || (currentUserId && file.senderId === currentUserId));
 
-    const previewLabel = previewMode === 'telegram'
-        ? (photo ? 'View Image' : 'View Video')
-        : previewMode === 'browser'
-            ? 'Open in Browser'
-            : null;
-
-    const previewIcon = previewMode === 'telegram' ? 'icon-eye-1' : 'icon-web';
+    const previewLabel = photo ? lang('DrivePreviewViewImage') : lang('DriveMenuPreview');
 
     return (
         <div className="DriveFilePreview">
             <div className="DriveFilePreview-header">
-                <span className="preview-title">File Details</span>
+                <span className="preview-title">{lang('DrivePreviewTitle')}</span>
                 <button className="close-btn" onClick={onClose}>
                     <i className="icon icon-close" />
                 </button>
@@ -131,11 +152,11 @@ const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdm
             <div className="DriveFilePreview-body">
                 <div
                     className="preview-icon-box"
-                    style={{ backgroundColor: `${fileColor}15` } as React.CSSProperties}
+                    style={`background-color: ${fileColor}15`}
                 >
                     <i
                         className={`icon ${getFileIconClass()} preview-icon`}
-                        style={{ color: fileColor } as React.CSSProperties}
+                        style={`color: ${fileColor}`}
                     />
                     {ext && <span className="file-ext">{ext.toUpperCase()}</span>}
                 </div>
@@ -152,11 +173,11 @@ const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdm
                                     if (e.key === 'Escape') setIsEditingTag(false);
                                 }}
                                 autoFocus
-                                placeholder="Enter tag/name..."
+                                placeholder={lang('DrivePreviewTagPlaceholder')}
                             />
                             <div className="tag-edit-actions">
-                                <button className="tag-btn save" onClick={handleSaveTag}>Save</button>
-                                <button className="tag-btn cancel" onClick={() => setIsEditingTag(false)}>Cancel</button>
+                                <button className="tag-btn save" onClick={handleSaveTag}>{lang('Save')}</button>
+                                <button className="tag-btn cancel" onClick={() => setIsEditingTag(false)}>{lang('Cancel')}</button>
                             </div>
                         </div>
                     ) : (
@@ -169,7 +190,7 @@ const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdm
                                         setTagValue(customFileName || '');
                                         setIsEditingTag(true);
                                     }}
-                                    title={customFileName ? 'Edit tag' : 'Add tag'}
+                                    title={customFileName ? lang('DrivePreviewEditTag') : lang('DrivePreviewAddTag')}
                                 >
                                     <i className={`icon ${customFileName ? 'icon-edit' : 'icon-add'}`} />
                                 </button>
@@ -180,46 +201,48 @@ const DriveFilePreview: FC<OwnProps> = ({ file, chatId, threadId, onClose, isAdm
 
                 <div className="preview-meta">
                     <div className="meta-row">
-                        <span className="meta-label">Size</span>
+                        <span className="meta-label">{lang('DriveTableColSize')}</span>
                         <span className="meta-value">{formatSize(size)}</span>
                     </div>
                     <div className="meta-row">
-                        <span className="meta-label">Date</span>
+                        <span className="meta-label">{lang('DriveTableColDate')}</span>
                         <span className="meta-value">{formatMediaDateTime(oldLang, file.date * 1000)}</span>
                     </div>
                     <div className="meta-row">
-                        <span className="meta-label">Type</span>
-                        <span className="meta-value">{ext ? ext.toUpperCase() : (photo ? 'IMAGE' : 'N/A')}</span>
+                        <span className="meta-label">{lang('DrivePreviewType')}</span>
+                        <span className="meta-value">{ext ? ext.toUpperCase() : (photo ? lang('DrivePreviewImageType') : lang('DrivePreviewNotAvailable'))}</span>
                     </div>
-                    <div className="meta-row">
-                        <span className="meta-label">Preview</span>
-                        <span className={`meta-value preview-status preview-status--${previewMode}`}>
-                            {previewMode === 'telegram' && '✓ Inline viewer'}
-                            {previewMode === 'browser' && '✓ Browser tab'}
-                            {previewMode === 'none' && '✗ Not supported'}
-                        </span>
-                    </div>
+                    {isDownloading && (
+                        <div className="transfer-progress">
+                            <div className="transfer-progress-fill indeterminate" />
+                        </div>
+                    )}
                 </div>
             </div>
 
             <div className="DriveFilePreview-actions">
-                {previewMode !== 'none' && previewLabel && (
+                {previewMode === 'image' && (
                     <button
                         className="preview-action-btn primary"
-                        onClick={previewMode === 'telegram' ? handleTelegramPreview : handleDownload}
+                        onClick={handleTelegramPreview}
                     >
-                        <i className={`icon ${previewIcon}`} /> {previewLabel}
+                        <i className="icon icon-eye-1" /> {previewLabel}
                     </button>
                 )}
                 <button className="preview-action-btn secondary" onClick={handleDownload}>
-                    <i className="icon icon-download" /> Download
+                    <i className="icon icon-download" /> {lang('DriveMenuDownload')}
                 </button>
-                {canManage && (
-                    <button className="preview-action-btn danger" onClick={handleDelete}>
-                        <i className="icon icon-delete" /> Delete
-                    </button>
-                )}
+                <button className="preview-action-btn secondary" onClick={() => setShareModalOpen(true)}>
+                    <i className="icon icon-share" /> {lang('DriveMenuShare')}
+                </button>
             </div>
+
+            <DriveShareFileModal
+                isOpen={shareModalOpen}
+                file={file}
+                sourceChatId={sourceChatId}
+                onClose={() => setShareModalOpen(false)}
+            />
         </div>
     );
 };

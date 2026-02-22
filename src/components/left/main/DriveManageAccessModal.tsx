@@ -1,11 +1,13 @@
 import type { FC } from '../../../lib/teact/teact';
-import { memo, useEffect, useMemo, useState } from '../../../lib/teact/teact';
+import { memo, useEffect } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 import type { ApiUser, ApiChat, ApiChatMember } from '../../../api/types';
 import { selectChatFullInfo, selectUser } from '../../../global/selectors';
 import { getChatAvatarHash } from '../../../global/helpers';
 import useMedia from '../../../hooks/useMedia';
 import { ApiMediaFormat } from '../../../api/types';
+
+import useLang from '../../../hooks/useLang';
 
 import './DriveManageAccessModal.scss';
 
@@ -31,6 +33,8 @@ const DriveManageAccessModal: FC<OwnProps & StateProps> = ({
     usersById,
     currentUserId
 }) => {
+    const lang = useLang();
+
     useEffect(() => {
         if (isOpen && !members) {
             getActions().loadFullChat({ chatId });
@@ -44,7 +48,7 @@ const DriveManageAccessModal: FC<OwnProps & StateProps> = ({
     };
 
     const handleRemoveMember = (userId: string) => {
-        if (window.confirm("Are you sure you want to remove this member from the space?")) {
+        if (window.confirm(lang('DriveManageRemoveConfirm'))) {
             getActions().deleteChatMember({ chatId, userId });
         }
     };
@@ -89,16 +93,16 @@ const DriveManageAccessModal: FC<OwnProps & StateProps> = ({
                         <i className="icon icon-permissions" />
                     </div>
                     <div>
-                        <h2>Manage Access</h2>
-                        <p>View, promote, or remove space members</p>
+                        <h2>{lang('DriveManageTitle')}</h2>
+                        <p>{lang('DriveManageSubtitle')}</p>
                     </div>
                 </div>
 
                 <div className="modal-body custom-scroll">
                     {!members ? (
-                        <div className="manage-loading">Loading members...</div>
+                        <div className="manage-loading">{lang('Loading')}...</div>
                     ) : members.length === 0 ? (
-                        <div className="manage-empty">No members found.</div>
+                        <div className="manage-empty">{lang('NoMembersFound')}</div>
                     ) : (
                         <div className="members-list">
                             {members.map((member) => {
@@ -126,7 +130,7 @@ const DriveManageAccessModal: FC<OwnProps & StateProps> = ({
                 </div>
 
                 <div className="modal-footer">
-                    <button className="modal-btn primary" onClick={onClose}>Done</button>
+                    <button className="modal-btn primary" onClick={onClose}>{lang('Done')}</button>
                 </div>
             </div>
         </div>
@@ -141,11 +145,13 @@ const MemberRow: FC<{
     onRemove: () => void;
     onToggleManager: () => void;
 }> = ({ user, isOwner, isManager, isCurrentUser, onRemove, onToggleManager }) => {
+    const lang = useLang();
+
     const avatarHash = getChatAvatarHash(user);
     const avatarBlobUrl = useMedia(avatarHash, false, ApiMediaFormat.BlobUrl);
 
     const initials = `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`.toUpperCase() || 'U';
-    const displayName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'User';
+    const displayName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || lang('HiddenName');
 
     return (
         <div className="member-row">
@@ -157,13 +163,13 @@ const MemberRow: FC<{
                 )}
             </div>
             <div className="member-info">
-                <h4>{displayName} {isCurrentUser && <span className="you-badge">You</span>}</h4>
-                <p>@{user.usernames?.[0]?.username || user.phoneNumber || 'User'}</p>
+                <h4>{displayName} {isCurrentUser && <span className="you-badge">{lang('ThisIsYou')}</span>}</h4>
+                <p>@{user.usernames?.[0]?.username || user.phoneNumber || lang('HiddenName')}</p>
             </div>
 
             <div className="member-actions">
                 <span className={`role-badge ${isOwner ? 'owner' : isManager ? 'manager' : 'member'}`}>
-                    {isOwner ? 'Owner' : isManager ? 'Manager' : 'Member'}
+                    {isOwner ? lang('DriveManageRoleOwner') : isManager ? lang('DriveManageRoleManager') : lang('DriveManageRoleMember')}
                 </span>
 
                 {!isOwner && !isCurrentUser && (
@@ -171,14 +177,14 @@ const MemberRow: FC<{
                         <button
                             className="action-btn toggle-role"
                             onClick={onToggleManager}
-                            title={isManager ? "Demote to Member" : "Promote to Manager"}
+                            title={isManager ? lang('DriveManageDemote') : lang('DriveManagePromote')}
                         >
                             {isManager ? <i className="icon icon-arrow-down" /> : <i className="icon icon-arrow-up" />}
                         </button>
                         <button
                             className="action-btn remove"
                             onClick={onRemove}
-                            title="Remove from space"
+                            title={lang('DriveManageRemove')}
                         >
                             <i className="icon icon-delete" />
                         </button>

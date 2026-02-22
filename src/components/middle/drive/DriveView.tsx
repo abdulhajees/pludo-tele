@@ -1,19 +1,23 @@
 import type { FC } from '@teact';
 import { memo, useMemo, useState, useEffect } from '@teact';
 import { getActions, withGlobal } from '../../../global';
-import { selectChatMessages } from '../../../global/selectors';
+import { selectChatMessages, selectTabState } from '../../../global/selectors';
+import { MAIN_THREAD_ID } from '../../../api/types';
 import type { ApiChat, ApiMessage } from '../../../api/types';
+import type { ActiveDownloads } from '../../../types';
 import { getMessageContent } from '../../../global/helpers';
 import { getDocumentExtension } from '../../common/helpers/documentInfo';
 import { openSystemFilesDialog } from '../../../util/systemFilesDialog';
+import { isDriveFolderTitle, isDriveShareTitle, normalizeDriveSectionUi } from '../../../util/drive';
+import type { DriveSection, DriveSectionUi } from '../../../util/drive';
 
+import useLang from '../../../hooks/useLang';
 import DriveHeader from './DriveHeader';
 import AssetTable from './AssetTable';
 import DriveFilePreview from './DriveFilePreview';
 import DriveNotifications from './DriveNotifications';
 import Composer from '../../common/Composer';
 import { DropAreaState } from '../composer/DropArea';
-import { useSpacePermissions } from '../../left/main/DrivePermissions';
 
 import './DriveView.scss';
 
@@ -21,43 +25,55 @@ type OwnProps = {
     chatId?: string;
     threadId?: number | string;
     isMobile?: boolean;
-    section?: 'my-files' | 'sharing' | 'deleted';
+    section?: DriveSectionUi;
     currentUserId?: string;
-    driveActiveSection?: string;
+    driveActiveSection?: DriveSection;
 };
 
 type StateProps = {
-    messagesById?: Record<number, ApiMessage>;
+    messagesByChatId?: Record<string, Record<number, ApiMessage> | undefined>;
     inviteLink?: string;
     driveFoldersIds?: string[];
+    isCurrentChatAdmin?: boolean;
+    activeDownloads?: ActiveDownloads;
 };
 
 type FilterType = 'all' | 'doc' | 'image' | 'pdf' | 'video';
+
+type DriveFileItem = {
+    id: string;
+    sourceChatId: string;
+    file: ApiMessage;
+};
 
 const DriveView: FC<OwnProps & StateProps> = ({
     chatId,
     threadId,
     isMobile,
-    messagesById,
+    messagesByChatId,
     inviteLink,
     section = 'my-files',
     currentUserId,
     driveActiveSection,
     driveFoldersIds,
+    isCurrentChatAdmin,
+    activeDownloads,
 }) => {
+    const lang = useLang();
+
     const [searchQuery, setSearchQuery] = useState('');
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-    const [selectedFile, setSelectedFile] = useState<ApiMessage | undefined>(undefined);
+    const [selectedFile, setSelectedFile] = useState<DriveFileItem | undefined>(undefined);
     const [activeFilter, setActiveFilter] = useState<FilterType>('all');
     const [isDraggingOver, setIsDraggingOver] = useState(false);
 
-    const { isAdmin } = useSpacePermissions(chatId || '');
+    const isAdmin = Boolean(isCurrentChatAdmin);
 
     useEffect(() => {
         if (driveFoldersIds && driveFoldersIds.length > 0) {
             const actions = getActions();
-            driveFoldersIds.forEach(id => {
-                actions.loadViewportMessages({ chatId: id });
+            driveFoldersIds.forEach((id) => {
+                actions.loadViewportMessages({ chatId: id, threadId: MAIN_THREAD_ID });
             });
         }
     }, [driveFoldersIds?.join(',')]);
@@ -122,26 +138,40 @@ const DriveView: FC<OwnProps & StateProps> = ({
         });
     };
 
-    const messages = useMemo(() => {
-        if (!messagesById) return [];
-        return Object.values(messagesById).sort((a, b) => b.date - a.date);
-    }, [messagesById]);
-
     const allFiles = useMemo(() => {
-        return messages.filter((msg) => {
-            const { document, photo, video } = getMessageContent(msg);
-            return document || photo || video;
+        if (!messagesByChatId) return [];
+
+        const items: DriveFileItem[] = [];
+
+        Object.entries(messagesByChatId).forEach(([sourceChatId, messagesById]) => {
+            if (!messagesById) return;
+
+            Object.values(messagesById).forEach((message) => {
+                const { document, photo, video } = getMessageContent(message);
+                if (!(document || photo || video)) return;
+
+                items.push({
+                    id: `${sourceChatId}_${message.id}`,
+                    sourceChatId,
+                    file: message,
+                });
+            });
         });
-    }, [messages]);
+
+        return items.sort((a, b) => b.file.date - a.file.date);
+    }, [messagesByChatId]);
 
     const sectionFiles = useMemo(() => {
-        const targetSection = driveActiveSection || section;
+        const targetSection = normalizeDriveSectionUi(driveActiveSection) || section;
+
         if (targetSection === 'sharing') {
-            return allFiles.filter((f) => f.senderId && f.senderId !== currentUserId);
+            return allFiles;
         }
+
         if (targetSection === 'recent') {
-            return allFiles.sort((a, b) => b.date - a.date).slice(0, 50);
+            return allFiles.slice(0, 50);
         }
+
         return allFiles;
     }, [allFiles, section, driveActiveSection, currentUserId]);
 
@@ -149,7 +179,7 @@ const DriveView: FC<OwnProps & StateProps> = ({
         let result = sectionFiles;
 
         if (activeFilter !== 'all') {
-            result = result.filter((file) => {
+            result = result.filter(({ file }) => {
                 const { document, photo } = getMessageContent(file);
                 const ext = document ? getDocumentExtension(document)?.toLowerCase() : '';
                 if (activeFilter === 'image') return photo || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '');
@@ -162,7 +192,7 @@ const DriveView: FC<OwnProps & StateProps> = ({
 
         if (searchQuery.trim().length > 0) {
             const lowerQuery = searchQuery.toLowerCase();
-            result = result.filter((file) => {
+            result = result.filter(({ file }) => {
                 const { document } = getMessageContent(file);
                 const customFileName = file.content.text?.text?.trim();
                 const rawFileName = document?.fileName || 'file';
@@ -174,11 +204,11 @@ const DriveView: FC<OwnProps & StateProps> = ({
     }, [sectionFiles, activeFilter, searchQuery]);
 
     const filters: { id: FilterType; label: string }[] = [
-        { id: 'all', label: 'All' },
-        { id: 'doc', label: 'Documents' },
-        { id: 'image', label: 'Images' },
-        { id: 'pdf', label: 'PDFs' },
-        { id: 'video', label: 'Videos' },
+        { id: 'all', label: lang('DriveFilterAll') },
+        { id: 'doc', label: lang('DriveFilterDocuments') },
+        { id: 'image', label: lang('DriveFilterImages') },
+        { id: 'pdf', label: lang('DriveFilterPdfs') },
+        { id: 'video', label: lang('DriveFilterVideos') },
     ];
 
     if (!chatId && !driveActiveSection) {
@@ -187,21 +217,25 @@ const DriveView: FC<OwnProps & StateProps> = ({
         );
     }
 
+    const driveSection = normalizeDriveSectionUi(driveActiveSection);
+
     const driveTitle = chatId
-        ? 'Space Folder'
-        : driveActiveSection === 'sharing'
-            ? 'Shared with me'
-            : driveActiveSection === 'recent'
-                ? 'Recent'
-                : 'Your Drive';
+        ? lang('DriveTitleSpaceFolder')
+        : driveSection === 'sharing'
+            ? lang('DriveTitleSharedWithMe')
+            : driveSection === 'recent'
+                ? lang('Recent')
+                : lang('DriveTitleYourDrive');
 
     const driveSubtitle = chatId
-        ? 'Manage files in this space.'
-        : driveActiveSection === 'sharing'
-            ? 'Files shared by other members.'
-            : driveActiveSection === 'recent'
-                ? 'Recently uploaded and modified files.'
-                : 'Upload and manage your assets securely.';
+        ? lang('DriveSubtitleSpaceFolder')
+        : driveSection === 'sharing'
+            ? lang('DriveSubtitleSharedWithMe')
+            : driveSection === 'recent'
+                ? lang('DriveSubtitleRecent')
+                : lang('DriveSubtitleYourDrive');
+
+    const selectedThreadId = selectedFile?.sourceChatId === chatId ? threadId : undefined;
 
     return (
         <div
@@ -215,8 +249,8 @@ const DriveView: FC<OwnProps & StateProps> = ({
                 <div className="drive-drop-overlay">
                     <div className="drop-content">
                         <i className="icon icon-upload" />
-                        <h2>Drop files to upload</h2>
-                        <p>Files will instantly upload to this Space</p>
+                        <h2>{lang('DriveDropTitle')}</h2>
+                        <p>{lang('DriveDropText')}</p>
                     </div>
                 </div>
             )}
@@ -254,21 +288,23 @@ const DriveView: FC<OwnProps & StateProps> = ({
 
                         <AssetTable
                             files={files}
-                            chatId={chatId || ''}
+                            chatId={chatId}
                             threadId={threadId}
                             onFileSelect={setSelectedFile}
                             isAdmin={isAdmin}
+                            tableMode={driveSection === 'sharing' ? 'sharing' : 'space'}
                         />
                     </div>
                 )}
                 {selectedFile && (
                     <DriveFilePreview
-                        file={selectedFile}
-                        chatId={chatId || ''}
-                        threadId={threadId}
+                        file={selectedFile.file}
+                        sourceChatId={selectedFile.sourceChatId}
+                        threadId={selectedThreadId}
                         onClose={() => setSelectedFile(undefined)}
                         isAdmin={isAdmin}
                         currentUserId={currentUserId}
+                        activeDownloads={activeDownloads}
                     />
                 )}
             </div>
@@ -297,33 +333,46 @@ const DriveView: FC<OwnProps & StateProps> = ({
 
 export default memo(withGlobal<OwnProps>(
     (global, { chatId, driveActiveSection }): StateProps => {
-        let messagesById: Record<number, ApiMessage> | undefined;
+        let messagesByChatId: Record<string, Record<number, ApiMessage> | undefined> | undefined;
         let inviteLink: string | undefined;
         let driveFoldersIds: string[] | undefined;
+        const fullInfoById = global.chats.fullInfoById || {};
 
         if (chatId) {
-            messagesById = selectChatMessages(global, chatId);
+            messagesByChatId = {
+                [chatId]: selectChatMessages(global, chatId),
+            };
             inviteLink = global.chats.fullInfoById[chatId]?.inviteLink;
         } else if (driveActiveSection) {
-            messagesById = {};
+            messagesByChatId = {};
             const allChats = Object.values(global.chats.byId || {});
             const driveFolders = allChats.filter(
-                (chat) => chat && chat.title && chat.title.toLowerCase().startsWith('pludo-drive') && !chat.isNotJoined && !chat.isRestricted
+                (chat) => chat
+                    && isDriveFolderTitle(chat.title, fullInfoById[chat.id]?.about)
+                    && !chat.isNotJoined
+                    && !chat.isRestricted
+            ) as ApiChat[];
+            const shareFolders = allChats.filter(
+                (chat) => chat
+                    && isDriveShareTitle(chat.title, fullInfoById[chat.id]?.about)
+                    && !chat.isNotJoined
+                    && !chat.isRestricted
             ) as ApiChat[];
 
-            driveFolders.forEach(folder => {
-                const folderMessages = selectChatMessages(global, folder.id);
-                if (folderMessages) {
-                    Object.assign(messagesById!, folderMessages);
-                }
+            const sourceChats = driveActiveSection === 'sharing' ? shareFolders : driveFolders;
+
+            sourceChats.forEach((folder) => {
+                messagesByChatId![folder.id] = selectChatMessages(global, folder.id);
             });
-            driveFoldersIds = driveFolders.map(f => f.id);
+            driveFoldersIds = sourceChats.map((f) => f.id);
         }
 
         return {
-            messagesById,
+            messagesByChatId,
             inviteLink,
             driveFoldersIds,
+            isCurrentChatAdmin: chatId ? Boolean(global.chats.byId[chatId]?.isCreator || Object.values(global.chats.byId[chatId]?.adminRights || {}).some(Boolean)) : false,
+            activeDownloads: selectTabState(global).activeDownloads,
         };
     }
 )(DriveView));

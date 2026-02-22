@@ -1,12 +1,16 @@
 import type { FC } from '../../../lib/teact/teact';
 import { memo, useState, useEffect } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
-import type { ApiUser, ApiChat, ApiMessage } from '../../../api/types';
+import type { ApiUser, ApiChat, ApiMessage, ApiChatFullInfo } from '../../../api/types';
 import { callApi } from '../../../api/gramjs';
 import { exportChatInvite } from '../../../api/gramjs/methods/management';
 import { getChatAvatarHash } from '../../../global/helpers';
+import { buildDriveP2PTitle, buildDriveShareAbout, getDriveShareParticipants } from '../../../util/drive';
+import { getDriveShareRecentUsernames, rememberDriveShareUsername } from '../../../util/driveShareRecentUsernames';
 import useMedia from '../../../hooks/useMedia';
 import { ApiMediaFormat } from '../../../api/types';
+
+import useLang from '../../../hooks/useLang';
 
 import './DriveShareFileModal.scss';
 
@@ -18,9 +22,9 @@ type OwnProps = {
 };
 
 type StateProps = {
-    currentUserId?: string;
     currentUser?: ApiUser;
     allChats?: Record<string, ApiChat>;
+    fullInfoById?: Record<string, ApiChatFullInfo>;
 };
 
 const DriveShareFileModal: FC<OwnProps & StateProps> = ({
@@ -28,14 +32,17 @@ const DriveShareFileModal: FC<OwnProps & StateProps> = ({
     file,
     sourceChatId,
     onClose,
-    currentUserId,
     currentUser,
-    allChats
+    allChats,
+    fullInfoById,
 }) => {
+    const lang = useLang();
+
     const [username, setUsername] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | undefined>();
     const [verifiedUser, setVerifiedUser] = useState<ApiUser | ApiChat | undefined>();
+    const [recentUsernames, setRecentUsernames] = useState<string[]>([]);
 
     const currentAvatarHash = verifiedUser ? getChatAvatarHash(verifiedUser) : undefined;
     const currentAvatarBlobUrl = useMedia(currentAvatarHash, false, ApiMediaFormat.BlobUrl);
@@ -49,6 +56,14 @@ const DriveShareFileModal: FC<OwnProps & StateProps> = ({
         }
     }, [isOpen]);
 
+    useEffect(() => {
+        if (!isOpen) return;
+
+        void getDriveShareRecentUsernames(currentUser?.id).then((items) => {
+            setRecentUsernames(items);
+        });
+    }, [isOpen, currentUser?.id]);
+
     if (!isOpen || !file || !sourceChatId) return undefined;
 
     const senderUsername = currentUser?.usernames?.[0]?.username;
@@ -58,7 +73,7 @@ const DriveShareFileModal: FC<OwnProps & StateProps> = ({
         if (!cleanUsername) return;
 
         if (!senderUsername) {
-            setError('You must have a Telegram @username to share files directly.');
+            setError(lang('DriveShareFileNeedUsername'));
             return;
         }
 
@@ -71,10 +86,10 @@ const DriveShareFileModal: FC<OwnProps & StateProps> = ({
             if (result && result.user && result.user.usernames?.length) {
                 setVerifiedUser(result.user);
             } else {
-                setError('User not found or they do not have a @username.');
+                setError(lang('DriveShareFileUserNotFound'));
             }
         } catch (err) {
-            setError('Error finding user.');
+            setError(lang('DriveShareUserLookupFailed'));
         } finally {
             setIsLoading(false);
         }
@@ -88,22 +103,39 @@ const DriveShareFileModal: FC<OwnProps & StateProps> = ({
         setIsLoading(true);
 
         try {
-            const expectedTitle1 = `pludo-drive-share_${senderUsername}_${receiverUsername}`;
-            const expectedTitle2 = `pludo-drive-share_${receiverUsername}_${senderUsername}`;
+            const expectedTitle1 = buildDriveP2PTitle(senderUsername, receiverUsername);
 
             let targetChannel: ApiChat | undefined = Object.values(allChats || {}).find(
-                (c) => c && c.title && (c.title === expectedTitle1 || c.title === expectedTitle2) && !c.isNotJoined
+                (c) => {
+                    if (!c || c.isNotJoined) return false;
+
+                    const participants = getDriveShareParticipants(c.title, fullInfoById?.[c.id]?.about);
+                    if (!participants) return false;
+
+                    return (
+                        (participants.senderUsername === senderUsername.toLowerCase()
+                            && participants.receiverUsername === receiverUsername.toLowerCase())
+                        || (participants.senderUsername === receiverUsername.toLowerCase()
+                            && participants.receiverUsername === senderUsername.toLowerCase())
+                    );
+                }
             );
 
             if (!targetChannel) {
                 // Create new private channel
                 const result = await callApi('createChannel', {
                     title: expectedTitle1,
-                    about: 'Pludo Drive P2P Sharing Channel',
+                    about: buildDriveShareAbout(senderUsername, receiverUsername),
                 });
                 if (!result || !result.channel) throw new Error('Failed to create sharing channel');
 
                 targetChannel = result.channel;
+            } else if (!fullInfoById?.[targetChannel.id]?.about) {
+                getActions().updateChat({
+                    chatId: targetChannel.id,
+                    title: targetChannel.title,
+                    about: buildDriveShareAbout(senderUsername, receiverUsername),
+                });
             }
 
             if (!targetChannel) throw new Error('Missing target channel');
@@ -117,7 +149,7 @@ const DriveShareFileModal: FC<OwnProps & StateProps> = ({
                 if (inviteLinkObj && inviteLinkObj.link) {
                     getActions().sendMessage({
                         chat: verifiedUser as ApiChat,
-                        text: `I shared a file with you on Pludo Drive! Join here to access it: ${inviteLinkObj.link}`,
+                        text: `${lang('DriveShareFileInvitePrefix')} ${inviteLinkObj.link}`,
                     });
                 }
             }
@@ -135,10 +167,12 @@ const DriveShareFileModal: FC<OwnProps & StateProps> = ({
             // Sync folders to categorize it immediately
             getActions().syncDriveChatFolders();
 
+            await rememberDriveShareUsername(receiverUsername, currentUser.id);
+
             onClose();
         } catch (e) {
             console.error(e);
-            setError('Failed to share file.');
+            setError(lang('DriveShareFileFailed'));
         } finally {
             setIsLoading(false);
         }
@@ -150,12 +184,12 @@ const DriveShareFileModal: FC<OwnProps & StateProps> = ({
 
     const getDisplayName = (user: ApiUser | ApiChat): string => {
         if ('firstName' in user) {
-            return `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'User';
+            return `${user.firstName || ''} ${user.lastName || ''}`.trim() || lang('HiddenName');
         }
         if ('title' in user) {
-            return user.title || 'User';
+            return user.title || lang('HiddenName');
         }
-        return 'User';
+        return lang('HiddenName');
     };
 
     const getInitials = (user: ApiUser | ApiChat): string => {
@@ -176,26 +210,26 @@ const DriveShareFileModal: FC<OwnProps & StateProps> = ({
                         <i className="icon icon-share" />
                     </div>
                     <div>
-                        <h2>Share File</h2>
-                        <p>Share directly with a Telegram username</p>
+                        <h2>{lang('DriveShareFileTitle')}</h2>
+                        <p>{lang('DriveShareFileSubtitle')}</p>
                     </div>
                 </div>
 
                 <div className="modal-body custom-scroll">
                     {!senderUsername && (
                         <div className="drive-share-field">
-                            <p className="field-error">You must configure a Telegram @username in your settings before you can share files directly.</p>
+                            <p className="field-error">{lang('DriveShareFileNeedUsername')}</p>
                         </div>
                     )}
 
                     {!verifiedUser ? (
                         <div className="drive-share-field">
-                            <label className="drive-field-label">Recipient's Username</label>
+                            <label className="drive-field-label">{lang('DriveShareFileRecipient')}</label>
                             <div className="input-row">
                                 <span className="input-prefix">@</span>
                                 <input
                                     className="share-input-inline"
-                                    placeholder="username"
+                                    placeholder={lang('Username')}
                                     value={username}
                                     onChange={(e) => {
                                         setUsername(e.target.value);
@@ -205,9 +239,25 @@ const DriveShareFileModal: FC<OwnProps & StateProps> = ({
                                     disabled={!senderUsername}
                                 />
                                 <button className="btn-primary small" onClick={handleVerifyUser} disabled={isLoading || !username.trim() || !senderUsername}>
-                                    {isLoading ? '...' : 'Find'}
+                                    {isLoading ? lang('DriveShareVerifying') : lang('DriveShareFileFind')}
                                 </button>
                             </div>
+                            {recentUsernames.length > 0 && !username.trim() && (
+                                <div className="recent-usernames-row">
+                                    {recentUsernames.map((recentUsername) => (
+                                        <button
+                                            key={recentUsername}
+                                            className="recent-username-chip"
+                                            onClick={() => {
+                                                setUsername(recentUsername);
+                                                setError(undefined);
+                                            }}
+                                        >
+                                            @{recentUsername}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                             {error && <p className="field-error">{error}</p>}
                         </div>
                     ) : (
@@ -215,7 +265,7 @@ const DriveShareFileModal: FC<OwnProps & StateProps> = ({
                             <div className="verified-user-card">
                                 <div className="verified-avatar">
                                     {currentAvatarBlobUrl ? (
-                                        <img src={currentAvatarBlobUrl} alt="avatar" />
+                                        <img src={currentAvatarBlobUrl} alt="" />
                                     ) : (
                                         <span className="user-initials">{getInitials(verifiedUser)}</span>
                                     )}
@@ -240,10 +290,10 @@ const DriveShareFileModal: FC<OwnProps & StateProps> = ({
                                 setVerifiedUser(undefined);
                                 onClose();
                             }}>
-                                Cancel
+                                {lang('Cancel')}
                             </button>
                             <button className="modal-btn primary share-action" onClick={handleShareFile} disabled={isLoading}>
-                                {isLoading ? 'Sharing...' : 'Share File'}
+                                {isLoading ? lang('DriveShareFileSharing') : lang('DriveMenuShare')}
                             </button>
                         </div>
                     </div>
@@ -256,9 +306,9 @@ const DriveShareFileModal: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
     (global): StateProps => {
         return {
-            currentUserId: global.currentUserId,
             currentUser: global.currentUserId ? global.users.byId[global.currentUserId] : undefined,
             allChats: global.chats.byId,
+            fullInfoById: global.chats.fullInfoById,
         };
     }
 )(DriveShareFileModal));

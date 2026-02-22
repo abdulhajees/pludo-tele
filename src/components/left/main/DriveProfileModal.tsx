@@ -8,6 +8,8 @@ import { ProfileEditProgress } from '../../../types';
 import { getChatAvatarHash } from '../../../global/helpers';
 import useMedia from '../../../hooks/useMedia';
 
+import useLang from '../../../hooks/useLang';
+
 import AvatarEditable from '../../ui/AvatarEditable';
 import './DriveProfileModal.scss';
 
@@ -22,6 +24,8 @@ type StateProps = {
 };
 
 const DriveProfileModal: FC<OwnProps & StateProps> = ({ isOpen, onClose, currentUser, progress }) => {
+    const lang = useLang();
+
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [username, setUsername] = useState('');
@@ -67,7 +71,7 @@ const DriveProfileModal: FC<OwnProps & StateProps> = ({ isOpen, onClose, current
     };
 
     const handleLogout = () => {
-        if (window.confirm('Are you sure you want to log out?')) {
+        if (window.confirm(lang('DriveProfileLogoutConfirm'))) {
             getActions().signOut({ forceInitApi: true });
         }
     };
@@ -84,44 +88,44 @@ const DriveProfileModal: FC<OwnProps & StateProps> = ({ isOpen, onClose, current
                         <AvatarEditable
                             currentAvatarBlobUrl={currentAvatarBlobUrl}
                             onChange={(newPhoto) => { setPhoto(newPhoto); setIsTouched(true); }}
-                            title="Edit Profile Photo"
+                            title={lang('ChangeYourProfilePicture')}
                             disabled={isLoading}
                         />
                     </div>
                     <div className="modal-header-text">
-                        <h2>Edit Profile</h2>
-                        <p>Manage your account details and settings</p>
+                        <h2>{lang('DriveProfileTitle')}</h2>
+                        <p>{lang('DriveProfileSubtitle')}</p>
                     </div>
                 </div>
 
                 <div className="modal-body custom-scroll">
                     <div className="drive-profile-field">
-                        <label className="drive-field-label">First Name</label>
+                        <label className="drive-field-label">{lang('LoginRegisterFirstNamePlaceholder')}</label>
                         <input
                             className="profile-input"
-                            placeholder="Required"
+                            placeholder={lang('DriveProfileRequired')}
                             value={firstName}
                             onChange={(e) => { setFirstName(e.target.value); setIsTouched(true); }}
                         />
                     </div>
 
                     <div className="drive-profile-field">
-                        <label className="drive-field-label">Last Name (Optional)</label>
+                        <label className="drive-field-label">{lang('DriveProfileLastNameOptional')}</label>
                         <input
                             className="profile-input"
-                            placeholder="Optional"
+                            placeholder={lang('DriveProfileOptional')}
                             value={lastName}
                             onChange={(e) => { setLastName(e.target.value); setIsTouched(true); }}
                         />
                     </div>
 
                     <div className="drive-profile-field">
-                        <label className="drive-field-label">Username</label>
+                        <label className="drive-field-label">{lang('Username')}</label>
                         <div className="input-row">
                             <span className="input-prefix">@</span>
                             <input
                                 className="profile-input-inline"
-                                placeholder="username"
+                                placeholder={lang('Username')}
                                 value={username}
                                 onChange={(e) => { setUsername(e.target.value); setIsTouched(true); }}
                             />
@@ -130,15 +134,15 @@ const DriveProfileModal: FC<OwnProps & StateProps> = ({ isOpen, onClose, current
                 </div>
 
                 <div className="modal-footer">
-                    <button className="modal-btn danger" onClick={handleLogout}>Log Out</button>
+                    <button className="modal-btn danger" onClick={handleLogout}>{lang('DriveProfileLogout')}</button>
                     <div className="footer-right">
-                        <button className="modal-btn cancel" onClick={onClose}>Cancel</button>
+                        <button className="modal-btn cancel" onClick={onClose}>{lang('Cancel')}</button>
                         <button
                             className={`modal-btn primary ${isLoading ? 'loading' : ''}`}
                             onClick={handleSave}
                             disabled={isLoading || !firstName.trim()}
                         >
-                            {isLoading ? 'Saving...' : 'Save Profile'}
+                            {isLoading ? lang('DriveProfileSaving') : lang('DriveProfileSave')}
                         </button>
                     </div>
                 </div>

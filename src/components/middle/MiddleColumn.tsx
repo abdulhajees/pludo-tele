@@ -3,9 +3,10 @@ import type { ElementRef } from '@teact';
 import { memo, useEffect, useMemo, useState } from '@teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { ApiChat, ApiChatBannedRights, ApiInputMessageReplyInfo, ApiTopic } from '../../api/types';
+import type { ApiChat, ApiChatBannedRights, ApiChatFullInfo, ApiInputMessageReplyInfo, ApiTopic } from '../../api/types';
 import type { ActiveEmojiInteraction, AnimationLevel, MessageListType, ThemeKey, ThreadId } from '../../types';
 import { MAIN_THREAD_ID } from '../../api/types';
+import { isDriveFolderTitle } from '../../util/drive';
 
 import {
   ANIMATION_END_DELAY,
@@ -63,6 +64,7 @@ import {
 import buildClassName from '../../util/buildClassName';
 import buildStyle from '../../util/buildStyle';
 import captureEscKeyListener from '../../util/captureEscKeyListener';
+import type { DriveSection } from '../../util/drive';
 import { isUserId } from '../../util/entities/ids';
 import { resolveTransitionName } from '../../util/resolveTransitionName';
 import calculateMiddleFooterTransforms from './helpers/calculateMiddleFooterTransforms';
@@ -163,7 +165,8 @@ type StateProps = {
   isAccountFrozen?: boolean;
   freezeAppealChat?: ApiChat;
   shouldBlockSendInMonoforum?: boolean;
-  driveActiveSection?: string;
+  driveActiveSection?: DriveSection;
+  chatFullInfo?: ApiChatFullInfo;
 };
 
 function isImage(item: DataTransferItem) {
@@ -231,8 +234,10 @@ function MiddleColumn({
   isAccountFrozen,
   freezeAppealChat,
   shouldBlockSendInMonoforum,
+  chatFullInfo,
   driveActiveSection,
 }: OwnProps & StateProps) {
+    const isDriveFolder = Boolean(chat && isDriveFolderTitle(chat.title, chatFullInfo?.about));
   const {
     openChat,
     openPreviousChat,
@@ -503,8 +508,6 @@ function MiddleColumn({
     || (isPinnedMessageList && canUnpin) || canShowOpenChatButton || renderingCanUnblock,
   );
   const withExtraShift = Boolean(isMessagingDisabled || isSelectModeActive);
-
-  const isDriveFolder = Boolean(chat?.title && chat.title.toLowerCase().startsWith('pludo-drive'));
 
   return (
     <div
@@ -896,6 +899,7 @@ export default memo(withGlobal<OwnProps>(
       isAccountFrozen,
       freezeAppealChat,
       shouldBlockSendInMonoforum,
+      chatFullInfo,
     } as Complete<StateProps>;
   },
 )(MiddleColumn));

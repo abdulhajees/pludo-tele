@@ -43,6 +43,7 @@ import {
   buildCollectionByKey, omit, pick, unique,
 } from '../../../util/iteratees';
 import { isLocalMessageId } from '../../../util/keys/messageKey';
+import { getDriveShareParticipants, isDriveFolderTitle, isDriveShareTitle } from '../../../util/drive';
 import * as langProvider from '../../../util/oldLangProvider';
 import { debounce, pause, throttle } from '../../../util/schedulers';
 import { extractCurrentThemeParams } from '../../../util/themeStyle';
@@ -3628,6 +3629,7 @@ addActionHandler('syncDriveChatFolders', async (global: any, actions: any): Prom
   if (!currentUserId) return;
 
   const allChats = Object.values(global.chats.byId || {}) as any[];
+  const fullInfoById = global.chats.fullInfoById || {};
 
   const privateFilesIds: string[] = [];
   const sharedFilesIds: string[] = [];
@@ -3636,22 +3638,21 @@ addActionHandler('syncDriveChatFolders', async (global: any, actions: any): Prom
   allChats.forEach((chat: any) => {
     if (!chat || chat.isNotJoined || chat.isRestricted || !chat.title) return;
 
-    if (chat.title.startsWith('pludo-drive-share_')) {
-      const parts = chat.title.split('_');
-      if (parts.length >= 3) {
-        const sender = parts[1];
-        const receiver = parts[2];
-        const currentUser = global.users.byId[currentUserId] as any;
+    const chatAbout = fullInfoById[chat.id]?.about;
 
-        if (currentUser && (
-          (currentUser.usernames as any[])?.some(u => u.username === sender) ||
-          (currentUser.usernames as any[])?.some(u => u.username === receiver)
-        )) {
+    if (isDriveShareTitle(chat.title, chatAbout)) {
+      const participants = getDriveShareParticipants(chat.title, chatAbout);
+      const currentUser = global.users.byId[currentUserId] as any;
+
+      if (participants && currentUser) {
+        const currentUsernames = ((currentUser.usernames as any[]) || []).map((item: any) => item.username?.toLowerCase()).filter(Boolean);
+        if (currentUsernames.includes(participants.senderUsername) || currentUsernames.includes(participants.receiverUsername)) {
           connectionsIds.push(chat.id);
         }
       }
+
       sharedFilesIds.push(chat.id);
-    } else if (chat.title.startsWith('pludo-drive_')) {
+    } else if (isDriveFolderTitle(chat.title, chatAbout)) {
       privateFilesIds.push(chat.id);
     }
   });

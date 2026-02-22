@@ -3,6 +3,7 @@ import { memo, useMemo } from '@teact';
 import type { ApiMessage } from '../../../api/types';
 import { getMessageContent } from '../../../global/helpers';
 import { getDocumentExtension } from '../../common/helpers/documentInfo';
+import useLang from '../../../hooks/useLang';
 
 import './QuickAccess.scss';
 
@@ -11,6 +12,8 @@ type OwnProps = {
 };
 
 const QuickAccess: FC<OwnProps> = ({ files }) => {
+    const lang = useLang();
+
     const stats = useMemo(() => {
         let docs = { count: 0, size: 0 };
         let presentations = { count: 0, size: 0 };
@@ -49,15 +52,15 @@ const QuickAccess: FC<OwnProps> = ({ files }) => {
 
     return (
         <div className="QuickAccess">
-            <h2 className="section-title">Quick Access</h2>
+            <h2 className="section-title">{lang('DriveQuickAccessTitle')}</h2>
             <div className="QuickAccess-cards">
                 <div className="card documents-card">
                     <div className="card-icon documents-icon">
                         <i className="icon icon-document" />
                     </div>
                     <div className="card-info">
-                        <span className="card-title">Documents</span>
-                        <span className="card-meta">{stats.docs.count} Files / {formatSize(stats.docs.size)}</span>
+                        <span className="card-title">{lang('DriveFilterDocuments')}</span>
+                        <span className="card-meta">{stats.docs.count} · {formatSize(stats.docs.size)}</span>
                     </div>
                 </div>
 
@@ -66,8 +69,8 @@ const QuickAccess: FC<OwnProps> = ({ files }) => {
                         <i className="icon icon-document" />
                     </div>
                     <div className="card-info">
-                        <span className="card-title">Presentations</span>
-                        <span className="card-meta">{stats.presentations.count} PPTs / {formatSize(stats.presentations.size)}</span>
+                        <span className="card-title">{lang('DriveQuickAccessPresentations')}</span>
+                        <span className="card-meta">{stats.presentations.count} · {formatSize(stats.presentations.size)}</span>
                     </div>
                 </div>
 
@@ -76,8 +79,8 @@ const QuickAccess: FC<OwnProps> = ({ files }) => {
                         <i className="icon icon-document" />
                     </div>
                     <div className="card-info">
-                        <span className="card-title">PDFs</span>
-                        <span className="card-meta">{stats.pdfs.count} PDFs / {formatSize(stats.pdfs.size)}</span>
+                        <span className="card-title">{lang('DriveFilterPdfs')}</span>
+                        <span className="card-meta">{stats.pdfs.count} · {formatSize(stats.pdfs.size)}</span>
                     </div>
                 </div>
 
@@ -86,8 +89,8 @@ const QuickAccess: FC<OwnProps> = ({ files }) => {
                         <i className="icon icon-photo" />
                     </div>
                     <div className="card-info">
-                        <span className="card-title">Images</span>
-                        <span className="card-meta">{stats.images.count} Images / {formatSize(stats.images.size)}</span>
+                        <span className="card-title">{lang('DriveFilterImages')}</span>
+                        <span className="card-meta">{stats.images.count} · {formatSize(stats.images.size)}</span>
                     </div>
                 </div>
             </div>

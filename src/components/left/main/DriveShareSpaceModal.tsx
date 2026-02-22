@@ -1,12 +1,14 @@
 import type { FC } from '../../../lib/teact/teact';
-import { memo, useState, useEffect, useCallback } from '../../../lib/teact/teact';
+import { memo, useState, useEffect } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 import type { ApiUser, ApiChat } from '../../../api/types';
 import { callApi } from '../../../api/gramjs';
 import { getChatAvatarHash } from '../../../global/helpers';
 import useMedia from '../../../hooks/useMedia';
 import { ApiMediaFormat } from '../../../api/types';
-import renderText from '../../common/helpers/renderText';
+import { getDriveShareRecentUsernames, rememberDriveShareUsername } from '../../../util/driveShareRecentUsernames';
+
+import useLang from '../../../hooks/useLang';
 
 import './DriveShareSpaceModal.scss';
 
@@ -17,14 +19,19 @@ type OwnProps = {
     onClose: () => void;
 };
 
-type StateProps = {};
+type StateProps = {
+    currentUser?: ApiUser;
+};
 
-const DriveShareSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, chatId, inviteLink, onClose }) => {
+const DriveShareSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, chatId, inviteLink, onClose, currentUser }) => {
+    const lang = useLang();
+
     const [username, setUsername] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | undefined>();
     const [verifiedUser, setVerifiedUser] = useState<ApiUser | ApiChat | undefined>();
     const [copied, setCopied] = useState(false);
+    const [recentUsernames, setRecentUsernames] = useState<string[]>([]);
 
     const currentAvatarHash = verifiedUser ? getChatAvatarHash(verifiedUser) : undefined;
     const currentAvatarBlobUrl = useMedia(currentAvatarHash, false, ApiMediaFormat.BlobUrl);
@@ -38,6 +45,14 @@ const DriveShareSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, chatId, invit
             setCopied(false);
         }
     }, [isOpen]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        void getDriveShareRecentUsernames(currentUser?.id).then((items) => {
+            setRecentUsernames(items);
+        });
+    }, [isOpen, currentUser?.id]);
 
     if (!isOpen) return undefined;
 
@@ -54,22 +69,28 @@ const DriveShareSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, chatId, invit
             if (result && result.user) {
                 setVerifiedUser(result.user);
             } else {
-                setError('User not found.');
+                setError(lang('DriveShareUserNotFound'));
             }
         } catch (err) {
-            setError('Error finding user.');
+            setError(lang('DriveShareUserLookupFailed'));
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleShareSpace = () => {
+    const handleShareSpace = async () => {
         if (!verifiedUser) return;
+
+        const receiverUsername = ('usernames' in verifiedUser && verifiedUser.usernames?.[0])
+            ? verifiedUser.usernames[0].username
+            : username.trim().replace(/^@/, '').toLowerCase();
 
         getActions().addChatMembers({
             chatId,
             memberIds: [verifiedUser.id]
         });
+
+        await rememberDriveShareUsername(receiverUsername, currentUser?.id);
 
         onClose();
     };
@@ -104,12 +125,12 @@ const DriveShareSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, chatId, invit
 
     const getDisplayName = (user: ApiUser | ApiChat): string => {
         if ('firstName' in user) {
-            return `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'User';
+            return `${user.firstName || ''} ${user.lastName || ''}`.trim() || lang('HiddenName');
         }
         if ('title' in user) {
-            return user.title || 'User';
+            return user.title || lang('HiddenName');
         }
-        return 'User';
+        return lang('HiddenName');
     };
 
     return (
@@ -120,20 +141,20 @@ const DriveShareSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, chatId, invit
                         <i className="icon icon-share" />
                     </div>
                     <div>
-                        <h2>Share Space</h2>
-                        <p>Invite a Telegram member by username</p>
+                        <h2>{lang('DriveShareSpaceTitle')}</h2>
+                        <p>{lang('DriveShareSpaceSubtitle')}</p>
                     </div>
                 </div>
 
                 <div className="modal-body custom-scroll">
                     {!verifiedUser ? (
                         <div className="drive-share-field">
-                            <label className="drive-field-label">Telegram Username</label>
+                            <label className="drive-field-label">{lang('DriveShareUsernameLabel')}</label>
                             <div className="input-row">
                                 <span className="input-prefix">@</span>
                                 <input
                                     className="share-input-inline"
-                                    placeholder="username"
+                                    placeholder={lang('Username')}
                                     value={username}
                                     onChange={(e) => {
                                         setUsername(e.target.value);
@@ -144,14 +165,30 @@ const DriveShareSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, chatId, invit
                                     }}
                                 />
                             </div>
+                            {recentUsernames.length > 0 && !username.trim() && (
+                                <div className="recent-usernames-row">
+                                    {recentUsernames.map((recentUsername) => (
+                                        <button
+                                            key={recentUsername}
+                                            className="recent-username-chip"
+                                            onClick={() => {
+                                                setUsername(recentUsername);
+                                                setError(undefined);
+                                            }}
+                                        >
+                                            @{recentUsername}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                             {error && <div className="share-error">{error}</div>}
 
                             {inviteLink && (
                                 <div className="drive-copy-link-section">
                                     <div className="copy-link-divider">
-                                        <span>or</span>
+                                        <span>{lang('DriveShareOr')}</span>
                                     </div>
-                                    <label className="drive-field-label">Copy Invite Link</label>
+                                    <label className="drive-field-label">{lang('DriveShareCopyInviteLink')}</label>
                                     <div className="input-row copy-row">
                                         <input
                                             className="share-input-inline link-input"
@@ -161,7 +198,7 @@ const DriveShareSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, chatId, invit
                                         <button
                                             className={`copy-btn ${copied ? 'copied' : ''}`}
                                             onClick={handleCopyLink}
-                                            title="Copy connect link"
+                                            title={lang('Copy')}
                                         >
                                             {copied ? <i className="icon icon-check" /> : <i className="icon icon-copy" />}
                                         </button>
@@ -173,7 +210,7 @@ const DriveShareSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, chatId, invit
                         <div className="verified-user-card">
                             <div className="verified-avatar">
                                 {currentAvatarBlobUrl ? (
-                                    <img src={currentAvatarBlobUrl} alt="Avatar" draggable={false} />
+                                    <img src={currentAvatarBlobUrl} alt="" draggable={false} />
                                 ) : (
                                     <span className="user-initials">{getInitials(verifiedUser)}</span>
                                 )}
@@ -189,7 +226,7 @@ const DriveShareSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, chatId, invit
                             <button
                                 className="change-user-btn"
                                 onClick={() => setVerifiedUser(undefined)}
-                                title="Change username"
+                                title={lang('DriveShareChangeUser')}
                             >
                                 <i className="icon icon-close" />
                             </button>
@@ -199,21 +236,21 @@ const DriveShareSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, chatId, invit
 
                 <div className="modal-footer">
                     <div className="footer-right">
-                        <button className="modal-btn cancel" onClick={onClose}>Cancel</button>
+                        <button className="modal-btn cancel" onClick={onClose}>{lang('Cancel')}</button>
                         {!verifiedUser ? (
                             <button
                                 className={`modal-btn primary ${isLoading ? 'loading' : ''}`}
                                 onClick={handleVerifyUser}
                                 disabled={isLoading || !username.trim()}
                             >
-                                {isLoading ? 'Verifying...' : 'Verify User'}
+                                {isLoading ? lang('DriveShareVerifying') : lang('DriveShareVerifyUser')}
                             </button>
                         ) : (
                             <button
                                 className="modal-btn share-action"
                                 onClick={handleShareSpace}
                             >
-                                Share Space
+                                {lang('DriveActionShareSpace')}
                             </button>
                         )}
                     </div>
@@ -224,5 +261,7 @@ const DriveShareSpaceModal: FC<OwnProps & StateProps> = ({ isOpen, chatId, invit
 };
 
 export default memo(withGlobal<OwnProps>(
-    (global): StateProps => ({})
+    (global): StateProps => ({
+        currentUser: global.currentUserId ? global.users.byId[global.currentUserId] : undefined,
+    })
 )(DriveShareSpaceModal));

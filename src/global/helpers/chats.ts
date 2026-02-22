@@ -25,6 +25,7 @@ import {
   VERIFICATION_CODES_USER_ID,
 } from '../../config';
 import { formatDateToString, formatTime } from '../../util/dates/dateFormat';
+import { getDriveDisplayName } from '../../util/drive';
 import { getPeerIdDividend, isUserId } from '../../util/entities/ids';
 import { getServerTime } from '../../util/serverTime';
 import { selectIsChatRestricted } from '../selectors';
@@ -96,7 +97,7 @@ export function getChatTitle(lang: OldLangFn | LangFn, chat: ApiChat, isSelf = f
     return lang('SavedMessages');
   }
   if (chat.title && chat.title.startsWith('pludo-drive_')) {
-    return chat.title.replace(/^pludo-drive_/, '') || lang('HiddenName');
+    return getDriveDisplayName(chat.title) || lang('HiddenName');
   }
   return chat.title || lang('HiddenName');
 }

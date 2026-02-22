@@ -1,6 +1,8 @@
 import type { FC } from '@teact';
 import { memo } from '@teact';
 
+import useLang from '../../../hooks/useLang';
+
 import './DriveHeader.scss';
 
 type OwnProps = {
@@ -24,19 +26,21 @@ const DriveHeader: FC<OwnProps> = ({
     searchQuery,
     onSearchQueryChange,
 }) => {
+    const lang = useLang();
+
     return (
         <div className="DriveHeader">
             <div className="DriveHeader-left">
                 <button
                     className="sidebar-toggle-btn"
                     onClick={onSidebarToggle}
-                    title={isSidebarCollapsed ? 'Show Sidebar' : 'Hide Sidebar'}
+                    title={isSidebarCollapsed ? lang('ShowSidebar') : lang('HideSidebar')}
                 >
                     <i className={`icon icon-${isSidebarCollapsed ? 'menu' : 'close'}`} />
                 </button>
                 <div className="DriveHeader-logo">
                     <i className="icon icon-channel" />
-                    <span className="logo-text">Pludo Drive</span>
+                    <span className="logo-text">{lang('DriveBrand')}</span>
                 </div>
             </div>
             <div className="DriveHeader-search">
@@ -44,7 +48,7 @@ const DriveHeader: FC<OwnProps> = ({
                     <i className="icon icon-search" />
                     <input
                         type="text"
-                        placeholder="Search Files or Assets"
+                        placeholder={lang('DriveHeaderSearchPlaceholder')}
                         className="search-input"
                         value={searchQuery}
                         onChange={(e) => onSearchQueryChange(e.target.value)}
@@ -54,12 +58,12 @@ const DriveHeader: FC<OwnProps> = ({
             <div className="DriveHeader-actions">
                 <button className="btn btn-secondary share-btn" onClick={onShareClick}>
                     <i className="icon icon-user-plus" />
-                    <span>Share</span>
+                    <span>{lang('DriveHeaderShare')}</span>
                 </button>
                 {onUploadClick && (
                     <button className="btn btn-primary new-folder-btn" onClick={onUploadClick}>
                         <i className="icon icon-add" />
-                        <span>New Upload</span>
+                        <span>{lang('DriveHeaderNewUpload')}</span>
                     </button>
                 )}
             </div>
